@@ -9,11 +9,10 @@ import { Ionicons } from '@expo/vector-icons';
 const { width, height } = Dimensions.get('window');
 
 // ==========================================
-// 1. BASE DE DATOS: MATERIAS Y CORRELATIVAS
+// 1. BASE DE DATOS: MATERIAS Y CORRELATIVAS (UNLP EXACTAS)
 // ==========================================
 
-const SPACE_CAREERS = ["Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica"];
-
+// Diccionario Maestro de Planes de Estudio (Corregido y Unificado)
 const STUDY_PLANS = {
   "Lic. en Física": [
     { id: 'E0201', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
@@ -195,7 +194,7 @@ const STUDY_PLANS = {
     { id: 'TOX', title: 'Toxicología Farmacéutica', year: 6, completed: false, dependencies: ['F0205', 'F0208'] },
     { id: 'OPT-6.1', title: 'Materia Optativa 1', year: 6, completed: false, dependencies: [] },
     { id: 'OPT-6.2', title: 'Materia Optativa 2', year: 6, completed: false, dependencies: [] },
-    { id: 'F0215', title: 'Práctica Farmacéutica', year: 6, completed: false, dependencies: ['F0209', 'F0213', 'F0214'] }
+    { id: 'F0215', title: 'Práctica Farmacéutica', year: 6, completed: false, dependencies: ['F0209', 'F0212', 'F0213', 'F0214'] }
   ],
   "Lic. en Biotecnología": [
     { id: 'A0201', title: 'Álgebra', year: 1, completed: false, dependencies: [] },
@@ -433,15 +432,17 @@ const STUDY_PLANS = {
   ]
 };
 
-// Generamos la lista de carreras automáticamente
+
+// Las carreras que activan el tema Espacial (Ahora coinciden exacto con los nombres)
+const SPACE_CAREERS = ["Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica"];
+
 const CARRERAS = Object.keys(STUDY_PLANS);
 
-const INITIAL_AGENDA = [
-  { id: '1', title: 'Inscripción a materias', date: '15/03', time: '08:00 hs', color: '#10B981' },
-];
+// Dias úteis para o Calendário Semanal (Mantido em espanhol como solicitado)
+const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
 // ==========================================
-// 2. COMPONENTES ANIMADOS: ESPACIO
+// 2. COMPONENTES ANIMADOS (Fundos Dinâmicos)
 // ==========================================
 
 const TwinklingStar = ({ size, top, left, delay }) => {
@@ -518,10 +519,6 @@ const GalaxyBackground = () => {
   );
 };
 
-// ==========================================
-// 3. COMPONENTES ANIMADOS: QUÍMICA/LABORATORIO
-// ==========================================
-
 const FloatingBubble = ({ size, left, delay, duration }) => {
   const translateY = useRef(new Animated.Value(height)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -566,7 +563,7 @@ const ChemistryBackground = () => {
 };
 
 // ==========================================
-// 4. COMPONENTE PRINCIPAL (APP)
+// 3. COMPONENTE PRINCIPAL (APP)
 // ==========================================
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -577,11 +574,13 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('Plan');
   const [plan, setPlan] = useState([]);
-  const [agenda, setAgenda] = useState(INITIAL_AGENDA);
   
-  const [agendaModalVisible, setAgendaModalVisible] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newDate, setNewDate] = useState('');
+  // --- ESTADOS DA FASE 2: HORÁRIOS ---
+  const [horarios, setHorarios] = useState([]);
+  const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [selectedDayTab, setSelectedDayTab] = useState('Lunes'); // Dia visível no calendário
+  const [newSubject, setNewSubject] = useState(null); 
+  const [newDay, setNewDay] = useState('Lunes');
   const [newTime, setNewTime] = useState('');
 
   const isSpaceTheme = !userCareer || SPACE_CAREERS.includes(userCareer);
@@ -601,10 +600,11 @@ export default function App() {
       setPlan(STUDY_PLANS[userCareer] || []);
       setIsAuthenticated(true);
     } else {
-      Alert.alert("Acceso Denegado", "Completá todos los campos para ingresar al portal.");
+      Alert.alert("Acesso Negado", "Preencha todos os campos para entrar no portal.");
     }
   };
 
+  // --- LÓGICA DE CORRELATIVAS ---
   const isSubjectUnlocked = (subject) => {
     if (!subject.dependencies || subject.dependencies.length === 0) return true;
     return subject.dependencies.every(depId => {
@@ -612,6 +612,11 @@ export default function App() {
       return dep && dep.completed;
     });
   };
+
+  // Filtro Inteligente: Matérias que estão desbloqueadas mas AINDA NÃO foram aprobadas
+  const availableSubjects = useMemo(() => {
+    return plan.filter(s => !s.completed && isSubjectUnlocked(s));
+  }, [plan]);
 
   const handleSubjectPress = (subject) => {
     if (isSubjectUnlocked(subject)) {
@@ -628,10 +633,7 @@ export default function App() {
         })
         .join(', ');
 
-      Alert.alert(
-        "Materia Bloqueada 🔒", 
-        `Para cursar "${subject.title}" debes aprobar:\n\n• ${missingDeps}`
-      );
+      Alert.alert("Matéria Bloqueada 🔒", `Para cursar "${subject.title}" você deve aprovar:\n\n• ${missingDeps}`);
     }
   };
 
@@ -649,16 +651,35 @@ export default function App() {
     return grouped;
   }, [plan]);
 
-  const addAgendaItem = () => {
-    if (newTitle && newDate) {
-      setAgenda([...agenda, { id: Math.random().toString(), title: newTitle, date: newDate, time: newTime || 'Todo el día', color: theme.primary }]);
-      setAgendaModalVisible(false);
-      setNewTitle(''); setNewDate(''); setNewTime('');
+  // Adicionar ao horário e mudar para essa aba automaticamente
+  const addToSchedule = () => {
+    if (newSubject && newDay && newTime) {
+      setHorarios([...horarios, { 
+        id: Math.random().toString(), 
+        subject: newSubject.title, 
+        code: newSubject.id,
+        day: newDay, 
+        time: newTime, 
+        color: theme.primary 
+      }]);
+      setScheduleModalVisible(false);
+      setNewSubject(null);
+      setNewTime('');
+      setSelectedDayTab(newDay);
+    } else {
+      Alert.alert("Dados incompletos", "Por favor, selecione uma matéria, um dia e escreva um horário.");
     }
+  };
+
+  const removeScheduleItem = (id) => {
+    setHorarios(horarios.filter(item => item.id !== id));
   };
 
   const DynamicBackground = theme.Background;
 
+  // ==========================================
+  // TELAS (VIEWS)
+  // ==========================================
   if (!isAuthenticated) {
     return (
       <View style={{ flex: 1 }}>
@@ -672,25 +693,25 @@ export default function App() {
               <Ionicons name={theme.iconHeader} size={60} color={theme.primary} style={{marginBottom: 10}} />
               <Text style={[styles.authTitleLine1, { textShadowColor: theme.bgLight }]}>UNIVERSO</Text>
               <Text style={[styles.authTitleLine2, { textShadowColor: theme.bgLight }]}>EXACTAS</Text>
-              <Text style={[styles.authSubtitle, { color: theme.primary }]}>La facultad en tu bolsillo.</Text>
+              <Text style={[styles.authSubtitle, { color: theme.primary }]}>A faculdade no seu bolso.</Text>
             </View>
 
             <View style={[styles.glassCard, { borderColor: theme.bgLight }]}>
               <View style={styles.inputContainerDark}>
                 <Ionicons name="mail" size={20} color={theme.primary} style={styles.inputIcon} />
-                <TextInput style={styles.inputDark} placeholder="alumno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none"/>
+                <TextInput style={styles.inputDark} placeholder="aluno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none"/>
               </View>
 
               <View style={styles.inputContainerDark}>
                 <Ionicons name="lock-closed" size={20} color={theme.primary} style={styles.inputIcon} />
-                <TextInput style={styles.inputDark} placeholder="Contraseña de acceso" placeholderTextColor="#64748B" secureTextEntry value={password} onChangeText={setPassword}/>
+                <TextInput style={styles.inputDark} placeholder="Senha de acesso" placeholderTextColor="#64748B" secureTextEntry value={password} onChangeText={setPassword}/>
               </View>
 
               <TouchableOpacity style={styles.selectorButtonDark} onPress={() => setCareerModalVisible(true)}>
                 <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
                   <Ionicons name="school" size={20} color={theme.primary} style={styles.inputIcon} />
                   <Text style={[styles.selectorTextDark, !userCareer && {color: '#64748B'}]} numberOfLines={1}>
-                    {userCareer ? userCareer : "Selecciona tu carrera..."}
+                    {userCareer ? userCareer : "Selecione seu curso..."}
                   </Text>
                 </View>
                 <Ionicons name="chevron-down" size={20} color="#64748B" />
@@ -737,7 +758,7 @@ export default function App() {
       <View style={styles.header}>
         <View>
           <Text style={[styles.greetingLight, { color: theme.primary }]}>Progreso Académico</Text>
-          <Text style={styles.screenTitleLight}>Plan de Estudio</Text>
+          <Text style={styles.screenTitleLight}>Plan de Estudios</Text>
         </View>
         <TouchableOpacity onPress={() => setIsAuthenticated(false)} style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}>
           <Ionicons name="log-out" size={20} color="#FCA5A5" />
@@ -794,59 +815,138 @@ export default function App() {
     </ScrollView>
   );
 
-  const renderAgenda = () => (
-    <View style={[styles.screenContainer, {flex: 1}]}>
-      <Text style={styles.screenTitleLight}>Mi Agenda</Text>
-      <Text style={styles.sectionSubtitleDark}>Bitácora Académica</Text>
-      <ScrollView showsVerticalScrollIndicator={false} style={{marginTop: 10}}>
-        {agenda.map((item) => (
-          <View key={item.id} style={styles.agendaCardGlass}>
-            <View style={[styles.agendaColorBar, {backgroundColor: theme.primary}]} />
-            <View style={styles.agendaDateBoxDark}>
-              <Text style={styles.agendaDayLight}>{item.date.split('/')[0]}</Text>
-              <Text style={[styles.agendaMonthDark, { color: theme.primary }]}>{item.date.split('/')[1]}</Text>
-            </View>
-            <View style={styles.agendaDetails}>
-              <Text style={styles.agendaItemTitleLight}>{item.title}</Text>
-              <View style={styles.agendaTimeRow}>
-                <Ionicons name="time" size={14} color="#94A3B8" />
-                <Text style={styles.agendaItemTimeDark}>{item.time}</Text>
-              </View>
-            </View>
-          </View>
-        ))}
-      </ScrollView>
-      <TouchableOpacity style={[styles.fabBtnDark, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={() => setAgendaModalVisible(true)}>
-        <Ionicons name="add" size={28} color="#FFF" />
-      </TouchableOpacity>
+  const renderHorarios = () => {
+    // Filtramos os eventos baseando-se no dia selecionado nas abas
+    const eventosDelDia = horarios.filter(h => h.day === selectedDayTab);
 
-      <Modal animationType="slide" transparent={true} visible={agendaModalVisible}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlayDark}>
-          <View style={styles.modalSheetDark}>
-            <View style={styles.sheetHandleDark} />
-            <Text style={styles.sheetTitleLight}>Añadir a Bitácora</Text>
-            <View style={styles.sheetInputGroup}>
-              <Text style={styles.sheetLabelDark}>Evento o Materia</Text>
-              <TextInput style={styles.sheetInputDark} placeholder="Ej. Parcial Álgebra" placeholderTextColor="#64748B" value={newTitle} onChangeText={setNewTitle} />
-            </View>
-            <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
-              <View style={[styles.sheetInputGroup, {width: '48%'}]}>
-                <Text style={styles.sheetLabelDark}>Fecha (DD/MM)</Text>
-                <TextInput style={styles.sheetInputDark} placeholder="Ej. 10/05" placeholderTextColor="#64748B" value={newDate} onChangeText={setNewDate} />
-              </View>
-              <View style={[styles.sheetInputGroup, {width: '48%'}]}>
-                <Text style={styles.sheetLabelDark}>Hora</Text>
-                <TextInput style={styles.sheetInputDark} placeholder="Ej. 14:00" placeholderTextColor="#64748B" value={newTime} onChangeText={setNewTime} />
-              </View>
-            </View>
-            <TouchableOpacity style={[styles.sheetSaveBtnDark, { backgroundColor: theme.secondary }]} onPress={addAgendaItem}>
-              <Text style={styles.sheetSaveText}>Guardar Evento</Text>
-            </TouchableOpacity>
+    return (
+      <View style={[styles.screenContainer, {flex: 1, paddingTop: Platform.OS === 'android' ? 50 : 24}]}>
+        <View style={styles.header}>
+          <View>
+            <Text style={[styles.greetingLight, { color: theme.primary }]}>Calendario Semanal</Text>
+            <Text style={styles.screenTitleLight}>Mis Horarios</Text>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
-    </View>
-  );
+        </View>
+
+        {/* Abas de Dias Superiores (Estilo Calendário) */}
+        <View style={styles.calendarTabs}>
+          {DIAS_SEMANA.map(dia => (
+            <TouchableOpacity 
+              key={dia} 
+              style={[styles.calTab, selectedDayTab === dia && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+              onPress={() => setSelectedDayTab(dia)}
+            >
+              <Text style={[styles.calTabText, selectedDayTab === dia && { color: '#FFF', fontWeight: 'bold' }]}>
+                {dia.substring(0, 3)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} style={{marginTop: 15}}>
+          <View style={styles.dayContainerGlass}>
+            <View style={styles.dayHeader}>
+              <Text style={styles.dayTitle}>{selectedDayTab}</Text>
+              <Text style={styles.daySubtitle}>{eventosDelDia.length} aula(s) agendada(s)</Text>
+            </View>
+
+            {eventosDelDia.length > 0 ? (
+              eventosDelDia.map(evento => (
+                <View key={evento.id} style={styles.agendaCardGlass}>
+                  <View style={[styles.agendaColorBar, {backgroundColor: evento.color}]} />
+                  <View style={styles.agendaTimeBox}>
+                    <Ionicons name="time" size={18} color={theme.primary} style={{marginBottom: 5}}/>
+                    <Text style={styles.agendaTimeText}>{evento.time}</Text>
+                  </View>
+                  <View style={styles.agendaDetails}>
+                    <Text style={styles.agendaItemCode}>{evento.code}</Text>
+                    <Text style={styles.agendaItemTitleLight}>{evento.subject}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.deleteBtn} onPress={() => removeScheduleItem(evento.id)}>
+                    <Ionicons name="trash-outline" size={22} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              ))
+            ) : (
+              <View style={styles.freeDayBox}>
+                <Ionicons name="cafe" size={40} color="#475569" style={{marginBottom: 10}} />
+                <Text style={styles.freeDayTitle}>Dia libre de cursada</Text>
+                <Text style={styles.freeDayText}>Aprovecha para estudiar o descansar.</Text>
+              </View>
+            )}
+          </View>
+          <View style={{height: 100}} />
+        </ScrollView>
+
+        {/* Botão Flutuante para adicionar aulas */}
+        <TouchableOpacity style={[styles.fabBtnDark, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={() => setScheduleModalVisible(true)}>
+          <Ionicons name="add" size={30} color="#FFF" />
+        </TouchableOpacity>
+
+        {/* Modal: Formulário Inteligente de Horários */}
+        <Modal animationType="slide" transparent={true} visible={scheduleModalVisible}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlayDark}>
+            <View style={styles.modalSheetDark}>
+              <View style={styles.sheetHandleDark} />
+              <Text style={styles.sheetTitleLight}>Agregar Materia</Text>
+              
+              {/* Seletor Inteligente de Matérias Desbloqueadas */}
+              <Text style={styles.sheetLabelDark}>Materias disponibles para cursar:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 25, maxHeight: 50}}>
+                {availableSubjects.length > 0 ? availableSubjects.map(s => (
+                  <TouchableOpacity 
+                    key={s.id} 
+                    style={[styles.subjectChip, newSubject?.id === s.id && {backgroundColor: theme.primary, borderColor: theme.primary}]}
+                    onPress={() => setNewSubject(s)}
+                  >
+                    <Text style={[styles.subjectChipText, newSubject?.id === s.id && {color: '#FFF', fontWeight: 'bold'}]}>
+                      {s.title}
+                    </Text>
+                  </TouchableOpacity>
+                )) : (
+                  <Text style={{color: '#64748B', alignSelf: 'center', fontStyle: 'italic', marginTop: 10}}>Não há matérias desbloqueadas.</Text>
+                )}
+              </ScrollView>
+
+              <Text style={styles.sheetLabelDark}>Dia de semana:</Text>
+              <View style={styles.daysRow}>
+                {DIAS_SEMANA.map(d => (
+                  <TouchableOpacity 
+                    key={d} 
+                    style={[styles.dayQuickBtn, newDay === d && {backgroundColor: theme.primary, borderColor: theme.primary}]}
+                    onPress={() => setNewDay(d)}
+                  >
+                    <Text style={[styles.dayQuickBtnText, newDay === d && {color: '#FFF', fontWeight: 'bold'}]}>
+                      {d.substring(0, 3)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.sheetInputGroup}>
+                <Text style={styles.sheetLabelDark}>Seleccion de Horario:</Text>
+                <TextInput 
+                  style={styles.sheetInputDark} 
+                  placeholder="Ex. 08:00 a 12:00 hs" 
+                  placeholderTextColor="#64748B" 
+                  value={newTime} 
+                  onChangeText={setNewTime} 
+                />
+              </View>
+
+              <TouchableOpacity style={[styles.sheetSaveBtnDark, { backgroundColor: theme.secondary }]} onPress={addToSchedule}>
+                <Text style={styles.sheetSaveText}>Agregar al Calendario</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setScheduleModalVisible(false)}>
+                <Text style={styles.sheetCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      </View>
+    );
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: isSpaceTheme ? '#050519' : '#022C22' }}>
@@ -856,13 +956,13 @@ export default function App() {
       <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.content}>
           {activeTab === 'Plan' && renderPlan()}
-          {activeTab === 'Agenda' && renderAgenda()}
+          {activeTab === 'Horarios' && renderHorarios()}
         </View>
 
         <View style={styles.bottomNavDark}>
-          <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Agenda')}>
-            <Ionicons name={activeTab === 'Agenda' ? "calendar" : "calendar-outline"} size={24} color={activeTab === 'Agenda' ? theme.primary : "#64748B"} />
-            <Text style={[styles.navTextDark, activeTab === 'Agenda' && { color: theme.primary, fontWeight: '900' }]}>Agenda</Text>
+          <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Horarios')}>
+            <Ionicons name={activeTab === 'Horarios' ? "time" : "time-outline"} size={26} color={activeTab === 'Horarios' ? theme.primary : "#64748B"} />
+            <Text style={[styles.navTextDark, activeTab === 'Horarios' && { color: theme.primary, fontWeight: '900' }]}>Horarios</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Plan')}>
             <View style={[styles.navCenterBtnDark, activeTab === 'Plan' && { backgroundColor: theme.secondary, shadowColor: theme.primary, borderColor: theme.primary, elevation: 6 }]}>
@@ -870,8 +970,8 @@ export default function App() {
             </View>
             <Text style={[styles.navTextDark, activeTab === 'Plan' && { color: theme.primary, fontWeight: '900' }, {marginTop: 5}]}>Plan</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => Alert.alert("Fase 2", "El Mercado Drive estará disponible en la próxima actualización.")}>
-            <Ionicons name="library-outline" size={24} color="#64748B" />
+          <TouchableOpacity style={styles.navItem} onPress={() => Alert.alert("Fase 3", "O Mercado Drive estará disponible en la próxima actualización.")}>
+            <Ionicons name="library-outline" size={26} color="#64748B" />
             <Text style={styles.navTextDark}>Mercado</Text>
           </TouchableOpacity>
         </View>
@@ -880,6 +980,9 @@ export default function App() {
   );
 }
 
+// ==========================================
+// 5. ESTILOS BASE
+// ==========================================
 const styles = StyleSheet.create({
   content: { flex: 1 },
   screenContainer: { padding: 24, paddingTop: Platform.OS === 'android' ? 40 : 24 },
@@ -934,21 +1037,48 @@ const styles = StyleSheet.create({
   subjectTextCompletedDark: { textDecorationLine: 'line-through', color: '#64748B' },
   checkboxDark: { width: 26, height: 26, borderRadius: 8, borderWidth: 2, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' },
 
-  agendaCardGlass: { flexDirection: 'row', backgroundColor: 'rgba(15, 23, 42, 0.75)', borderRadius: 20, marginBottom: 15, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  agendaColorBar: { width: 6, height: '100%' },
-  agendaDateBoxDark: { padding: 15, alignItems: 'center', justifyContent: 'center', borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.1)', width: 80, backgroundColor: 'rgba(0,0,0,0.2)' },
-  agendaDayLight: { fontSize: 26, fontWeight: '900', color: '#FFF' },
-  agendaMonthDark: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
-  agendaItemTitleLight: { fontSize: 16, fontWeight: '800', color: '#F8FAFC', marginBottom: 6 },
-  agendaItemTimeDark: { fontSize: 14, color: '#94A3B8', marginLeft: 6, fontWeight: '600' },
-  fabBtnDark: { position: 'absolute', bottom: 30, right: 24, width: 65, height: 65, borderRadius: 32.5, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 15, elevation: 8 },
+  // --- ESTILOS SEMANA (CALENDÁRIO DE HORÁRIOS) ---
+  calendarTabs: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'rgba(15, 23, 42, 0.65)', borderRadius: 16, padding: 5, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  calTab: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12 },
+  calTabText: { color: '#94A3B8', fontSize: 14, fontWeight: '700' },
 
+  dayContainerGlass: { marginTop: 15 },
+  dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 20, paddingHorizontal: 5 },
+  dayTitle: { fontSize: 26, fontWeight: '900', color: '#FFF', letterSpacing: 0.5 },
+  daySubtitle: { color: '#94A3B8', fontSize: 14, fontWeight: '600', marginBottom: 4 },
+  
+  freeDayBox: { alignItems: 'center', backgroundColor: 'rgba(15, 23, 42, 0.4)', padding: 40, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', borderStyle: 'dashed' },
+  freeDayTitle: { color: '#E2E8F0', fontSize: 18, fontWeight: '800', marginBottom: 5 },
+  freeDayText: { color: '#64748B', fontSize: 14, fontWeight: '500' },
+
+  agendaCardGlass: { flexDirection: 'row', backgroundColor: 'rgba(15, 23, 42, 0.85)', borderRadius: 20, marginBottom: 15, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center', shadowColor: '#000', shadowOffset: {width:0, height: 4}, shadowOpacity: 0.3, shadowRadius: 10 },
+  agendaColorBar: { width: 6, height: '100%' },
+  agendaTimeBox: { padding: 15, alignItems: 'center', justifyContent: 'center', borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.05)', width: 95, backgroundColor: 'rgba(0,0,0,0.3)' },
+  agendaTimeText: { fontSize: 14, fontWeight: '800', color: '#E2E8F0', textAlign: 'center' },
+  agendaItemCode: { fontSize: 12, fontWeight: '900', color: '#94A3B8', marginBottom: 4 },
+  agendaItemTitleLight: { fontSize: 16, fontWeight: '800', color: '#F8FAFC', paddingRight: 10 },
+  agendaDetails: { padding: 15, flex: 1, justifyContent: 'center' },
+  deleteBtn: { padding: 15 },
+
+  fabBtnDark: { position: 'absolute', bottom: 30, right: 24, width: 65, height: 65, borderRadius: 32.5, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 15, elevation: 8 },
+
+  // --- MODAL DE HORÁRIOS ---
   modalSheetDark: { backgroundColor: '#0F172A', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 25, borderWidth: 1, borderColor: '#334155' },
   sheetHandleDark: { width: 40, height: 5, backgroundColor: '#334155', borderRadius: 3, alignSelf: 'center', marginBottom: 20 },
   sheetTitleLight: { fontSize: 24, fontWeight: '900', color: '#FFF', marginBottom: 25 },
-  sheetLabelDark: { fontSize: 14, fontWeight: '800', color: '#94A3B8', marginBottom: 8 },
+  sheetLabelDark: { fontSize: 14, fontWeight: '800', color: '#94A3B8', marginBottom: 12, marginTop: 5 },
+  sheetInputGroup: { marginBottom: 20 },
   sheetInputDark: { backgroundColor: 'rgba(30, 41, 59, 0.8)', borderWidth: 1, borderColor: '#334155', borderRadius: 16, padding: 16, fontSize: 16, color: '#FFF', fontWeight: '500' },
-  sheetSaveBtnDark: { borderRadius: 16, padding: 18, alignItems: 'center', marginTop: 15, marginBottom: Platform.OS === 'ios' ? 20 : 0 },
+  sheetSaveBtnDark: { borderRadius: 16, padding: 18, alignItems: 'center', marginTop: 10 },
+  sheetSaveText: { color: '#FFF', fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
+  sheetCancelBtn: { padding: 15, alignItems: 'center', marginTop: 5, marginBottom: Platform.OS === 'ios' ? 20 : 0 },
+  sheetCancelText: { color: '#94A3B8', fontSize: 16, fontWeight: 'bold' },
+
+  subjectChip: { backgroundColor: 'rgba(30, 41, 59, 0.8)', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 20, marginRight: 10, borderWidth: 1, borderColor: '#334155', justifyContent: 'center' },
+  subjectChipText: { color: '#CBD5E1', fontSize: 14, fontWeight: '600' },
+  daysRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25 },
+  dayQuickBtn: { flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.8)', paddingVertical: 14, borderRadius: 14, marginHorizontal: 3, alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
+  dayQuickBtnText: { color: '#CBD5E1', fontSize: 14, fontWeight: '700' },
 
   bottomNavDark: { flexDirection: 'row', backgroundColor: 'rgba(15, 23, 42, 0.95)', paddingVertical: 10, paddingBottom: Platform.OS === 'ios' ? 30 : 15, borderTopWidth: 1, borderColor: '#334155', justifyContent: 'space-around', alignItems: 'flex-end' },
   navCenterBtnDark: { backgroundColor: 'rgba(30, 41, 59, 0.8)', width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginBottom: -5, borderWidth: 1, borderColor: '#334155' },
