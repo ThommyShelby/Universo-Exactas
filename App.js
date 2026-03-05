@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   StyleSheet, Text, View, ScrollView, TouchableOpacity, 
   SafeAreaView, StatusBar, TextInput, Modal, KeyboardAvoidingView, Platform,
-  Animated, Dimensions, Easing, Alert
+  Animated, Dimensions, Easing, Alert, ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from './firebaseConfig'; 
@@ -159,9 +159,17 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [userCareer, setUserCareer] = useState('');
   const [careerModalVisible, setCareerModalVisible] = useState(false);
-
-  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
-
+  const [isLoading, setIsLoading] = useState(false);
+  const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', buttons: [] });
+  const showAlert = (title, message, buttons = null) => {
+    const defaultButton = [{ text: "Entendido", onPress: () => setCustomAlert(prev => ({...prev, visible: false})) }];
+    setCustomAlert({
+      visible: true,
+      title,
+      message,
+      buttons: buttons || defaultButton
+    });
+  };
   const [activeTab, setActiveTab] = useState('Plan');
   const [plan, setPlan] = useState([]);
   
@@ -195,31 +203,22 @@ export default function App() {
     return passwordRegex.test(password);
   };
 
-  // --- LOGICA DE FIREBASE ---
+  // --- LOGICA DE FIREBASE MODIFICADA ---
   const handleLogin = async () => {
     if (email.trim() === '' || password === '') {
-      Alert.alert("Faltan datos", "Por favor, ingresa tu correo y contraseña.");
+      showAlert("Faltan datos", "Por favor, ingresa tu correo y contraseña.");
       return;
     }
     if (userCareer === '') {
-        Alert.alert("Falta Carrera", "Selecciona a qué carrera quieres ingresar.");
-        return;
+      showAlert("Falta Carrera", "Selecciona a qué carrera quieres ingresar.");
+      return;
     }
 
+    setIsLoading(true); // Iniciamos el spinner
     try {
-      // 1. Autenticar en Google
       const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-      
-      // 2. Traer el plan de la NUBE (¡Adiós código duro!)
-      const planRef = await getDoc(doc(db, "planes_estudio", userCareer));
-      if (!planRef.exists()) {
-        Alert.alert("Error de Servidor", "No se encontró el plan de esta carrera en la base de datos.");
-        return;
-      }
-      const cloudPlan = planRef.data().materias || [];
-
-      // 3. Traer el progreso y horarios del USUARIO
       const userDoc = await getDoc(doc(db, "usuarios", userCredential.user.uid));
+      
       let savedCompletedIds = [];
       let savedHorarios = [];
 
@@ -229,8 +228,7 @@ export default function App() {
         savedHorarios = data.horarios || [];
       }
 
-      // 4. Cruzar los datos: Plan en la nube + Progreso del usuario
-      const basePlan = cloudPlan.map(subj => ({
+      const basePlan = STUDY_PLANS[userCareer].map(subj => ({
         ...subj,
         completed: savedCompletedIds.includes(subj.id)
       }));
@@ -241,12 +239,14 @@ export default function App() {
       
     } catch (error) {
       if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        Alert.alert("Acceso denegado", "El correo o la contraseña son incorrectos.");
+        showAlert("Acceso denegado", "El correo o la contraseña son incorrectos.");
       } else if (error.code === 'auth/invalid-email') {
-        Alert.alert("Correo inválido", "El formato del correo no es correcto (ej: nombre@dominio.com).");
+        showAlert("Correo inválido", "El formato del correo no es correcto (ej: nombre@dominio.com).");
       } else {
-        Alert.alert("Error", error.message);
+        showAlert("Error", error.message);
       }
+    } finally {
+      setIsLoading(false); // Apagamos el spinner pase lo que pase
     }
   };
 
@@ -254,21 +254,22 @@ export default function App() {
     const trimmedEmail = email.trim();
 
     if (trimmedEmail === '' || password === '') {
-      Alert.alert("Faltan Datos", "Debes completar tu correo y contraseña para registrarte.");
+      showAlert("Faltan Datos", "Debes completar tu correo y contraseña para registrarte.");
       return;
     }
     if (!isValidEmail(trimmedEmail)) {
-        Alert.alert("Correo inválido", "Asegúrate de que tu correo tenga un formato válido (debe incluir '@' y un dominio).");
-        return;
+      showAlert("Correo inválido", "Asegúrate de que tu correo tenga un formato válido (debe incluir '@' y un dominio).");
+      return;
     }
     if (!isValidPassword(password)) {
-      Alert.alert(
+      showAlert(
         "Contraseña débil", 
-        "La contraseña debe tener al menos:\n\n• 6 caracteres\n• 1 letra mayúscula\n• 1 letra minúscula\n• 1 número\n\n(No se permiten caracteres especiales como @, #, $, etc.)"
+        "La contraseña debe tener al menos:\n\n• 6 caracteres\n• 1 letra mayúscula\n• 1 letra minúscula\n• 1 número\n\n(Sin caracteres especiales como @, #, $)"
       );
       return;
     }
     
+    setIsLoading(true); // Iniciamos el spinner
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       
@@ -279,10 +280,11 @@ export default function App() {
         horarios: []
       });
 
-      Alert.alert(
+      showAlert(
           "¡Registro Exitoso!", 
           "Tu cuenta ha sido creada correctamente. Ahora selecciona tu carrera e inicia sesión.",
           [{ text: "Entendido", onPress: () => {
+              setCustomAlert(prev => ({...prev, visible: false}));
               setAuthMode('login');
               setPassword(''); 
           }}]
@@ -290,10 +292,12 @@ export default function App() {
       
     } catch (error) {
       if (error.code === 'auth/email-already-in-use') {
-        Alert.alert("El correo ya existe", "Esta dirección de correo ya está registrada. Por favor, intenta iniciar sesión.");
+        showAlert("El correo ya existe", "Esta dirección de correo ya está registrada. Por favor, intenta iniciar sesión.");
       } else {
-        Alert.alert("Error al registrar", error.message);
+        showAlert("Error al registrar", error.message);
       }
+    } finally {
+      setIsLoading(false); // Apagamos el spinner
     }
   };
 
@@ -426,42 +430,43 @@ export default function App() {
 
         <SafeAreaView style={{ flex: 1 }}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            {/* NUEVO: Envolvemos el contenido en un ScrollView para evitar que se corte en pantallas chicas */}
             <ScrollView 
-              contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 30, paddingVertical: 20 }} 
+              contentContainerStyle={{ flexGrow: 1, justifyContent: 'space-between', paddingHorizontal: 30, paddingVertical: Platform.OS === 'android' ? 60 : 40 }} 
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
-              <View style={[styles.logoContainer, { marginBottom: 30 }]}>
-                <Ionicons name={theme.iconHeader} size={60} color={theme.primary} style={{marginBottom: 10}} />
+              {/* Título en la parte superior */}
+              <View style={[styles.logoContainer, { marginTop: 20 }]}>
+                <Ionicons name={theme.iconHeader} size={65} color={theme.primary} style={{marginBottom: 10}} />
                 <Text style={[styles.authTitleLine1, { textShadowColor: theme.bgLight }]}>UNIVERSO</Text>
                 <Text style={[styles.authTitleLine2, { textShadowColor: theme.bgLight }]}>EXACTAS</Text>
                 <Text style={[styles.authSubtitle, { color: theme.primary }]}>La facultad en tu bolsillo.</Text>
               </View>
 
-              <View style={[styles.glassCard, { borderColor: theme.bgLight }]}>
+              {/* Formulario empujado hacia abajo */}
+              <View style={[styles.glassCard, { borderColor: theme.bgLight, marginBottom: 20 }]}>
                 
                 <Text style={styles.authModeTitle}>
                   {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta Nueva'}
                 </Text>
 
-                <View style={styles.inputContainerDark}>
+                {/* Inputs unificados y más compactos */}
+                <View style={styles.unifiedInputContainer}>
                   <Ionicons name="mail" size={20} color={theme.primary} style={styles.inputIcon} />
-                  <TextInput style={styles.inputDark} placeholder="alumno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none"/>
+                  <TextInput style={styles.unifiedInput} placeholder="alumno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none"/>
                 </View>
 
-                <View style={styles.inputContainerDark}>
+                <View style={styles.unifiedInputContainer}>
                   <Ionicons name="lock-closed" size={20} color={theme.primary} style={styles.inputIcon} />
-                  <TextInput style={styles.inputDark} placeholder="Contraseña" placeholderTextColor="#64748B" secureTextEntry value={password} onChangeText={setPassword}/>
+                  <TextInput style={styles.unifiedInput} placeholder="Contraseña" placeholderTextColor="#64748B" secureTextEntry value={password} onChangeText={setPassword}/>
                 </View>
 
-                {/* EL SELECTOR AHORA ESTÁ EN LOGIN, NO EN REGISTRO */}
                 {authMode === 'login' && (
-                  <TouchableOpacity style={styles.selectorButtonDark} onPress={() => setCareerModalVisible(true)}>
+                  <TouchableOpacity style={styles.unifiedInputContainer} onPress={() => setCareerModalVisible(true)}>
                     <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
                       <Ionicons name="school" size={20} color={theme.primary} style={styles.inputIcon} />
                       <Text style={[styles.selectorTextDark, !userCareer && {color: '#64748B'}]} numberOfLines={1}>
-                        {userCareer ? userCareer : "Selecciona a qué carrera ingresar..."}
+                        {userCareer ? userCareer : "Selecciona tu carrera..."}
                       </Text>
                     </View>
                     <Ionicons name="chevron-down" size={20} color="#64748B" />
@@ -470,9 +475,16 @@ export default function App() {
 
                 {authMode === 'login' ? (
                   <>
-                    <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={handleLogin} activeOpacity={0.8}>
-                      <Text style={styles.loginButtonText}>Entrar</Text>
-                      <Ionicons name="log-in-outline" size={20} color="#FFF" />
+                    <TouchableOpacity 
+                      style={[styles.loginButton, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} 
+                      onPress={handleLogin} activeOpacity={0.8} disabled={isLoading}
+                    >
+                      {isLoading ? <ActivityIndicator color="#FFF" size="small" /> : (
+                        <>
+                          <Text style={styles.loginButtonText}>Entrar</Text>
+                          <Ionicons name="log-in-outline" size={20} color="#FFF" />
+                        </>
+                      )}
                     </TouchableOpacity>
                     
                     <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('register'); setUserCareer(''); setPassword(''); }}>
@@ -481,9 +493,16 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]} onPress={handleRegister} activeOpacity={0.8}>
-                      <Text style={styles.loginButtonText}>Registrarme</Text>
-                      <Ionicons name="person-add-outline" size={20} color="#FFF" />
+                    <TouchableOpacity 
+                      style={[styles.loginButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]} 
+                      onPress={handleRegister} activeOpacity={0.8} disabled={isLoading}
+                    >
+                      {isLoading ? <ActivityIndicator color="#FFF" size="small" /> : (
+                        <>
+                          <Text style={styles.loginButtonText}>Registrarme</Text>
+                          <Ionicons name="person-add-outline" size={20} color="#FFF" />
+                        </>
+                      )}
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('login'); setPassword(''); }}>
@@ -496,6 +515,7 @@ export default function App() {
           </KeyboardAvoidingView>
         </SafeAreaView>
 
+        {/* Modal de Selector de Carrera */}
         <Modal visible={careerModalVisible} animationType="fade" transparent={true}>
           <View style={styles.modalOverlayDark}>
             <View style={styles.modalContentDark}>
@@ -516,6 +536,33 @@ export default function App() {
                   );
                 })}
               </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* MODAL DE ALERTAS ESTILIZADAS (Glassmorphism) */}
+        <Modal visible={customAlert.visible} transparent={true} animationType="fade">
+          <View style={styles.modalOverlayDark}>
+            <View style={styles.customAlertCard}>
+              <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
+                <Ionicons name="alert-circle" size={36} color={theme.primary} />
+              </View>
+              <Text style={styles.alertTitle}>{customAlert.title}</Text>
+              <Text style={styles.alertMessage}>{customAlert.message}</Text>
+              <View style={styles.alertButtonsRow}>
+                {customAlert.buttons.map((btn, index) => (
+                  <TouchableOpacity 
+                    key={index} 
+                    style={[styles.alertBtn, { backgroundColor: theme.secondary }]} 
+                    onPress={() => {
+                      if(btn.onPress) btn.onPress();
+                      else setCustomAlert(prev => ({...prev, visible: false}));
+                    }}
+                  >
+                    <Text style={styles.alertBtnText}>{btn.text}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           </View>
         </Modal>
@@ -810,10 +857,20 @@ const styles = StyleSheet.create({
   switchModeBtn: { marginTop: 20, alignItems: 'center', paddingVertical: 10 },
   switchModeText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
   switchModeTextBold: { fontWeight: '900' },
-  inputIcon: { marginRight: 10 },
-  inputDark: { flex: 1, color: '#FFF', paddingVertical: 18, fontSize: 16 },
-  selectorButtonDark: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderRadius: 16, padding: 18, marginBottom: 25, borderWidth: 1, borderColor: '#334155' },
+  // Inputs unificados (Email, Contraseña y Selector de Carrera)
+  unifiedInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderRadius: 16, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 16 : 12, marginBottom: 15, borderWidth: 1, borderColor: '#334155', minHeight: 55 },
+  unifiedInput: { flex: 1, color: '#FFF', fontSize: 16, padding: 0 },
+  inputIcon: { marginRight: 12 },
   selectorTextDark: { fontSize: 16, color: '#FFF' },
+  
+  // Estilos de la Alerta Personalizada (Modal)
+  customAlertCard: { backgroundColor: '#0F172A', borderRadius: 24, padding: 25, width: '90%', alignItems: 'center', borderWidth: 1, borderColor: '#334155', shadowColor: '#000', shadowOffset: {width:0, height: 10}, shadowOpacity: 0.4, shadowRadius: 20, elevation: 10 },
+  alertIconBubble: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  alertTitle: { fontSize: 22, fontWeight: '900', color: '#FFF', marginBottom: 10, textAlign: 'center' },
+  alertMessage: { fontSize: 15, color: '#94A3B8', textAlign: 'center', lineHeight: 22, marginBottom: 25 },
+  alertButtonsRow: { flexDirection: 'row', justifyContent: 'center', width: '100%' },
+  alertBtn: { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', marginHorizontal: 5 },
+  alertBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
   loginButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderRadius: 16, padding: 18, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 12 },
   loginButtonText: { color: '#FFF', fontSize: 18, fontWeight: '900', marginRight: 10, letterSpacing: 1 },
 
