@@ -160,6 +160,8 @@ export default function App() {
   const [userCareer, setUserCareer] = useState('');
   const [careerModalVisible, setCareerModalVisible] = useState(false);
 
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+
   const [activeTab, setActiveTab] = useState('Plan');
   const [plan, setPlan] = useState([]);
   
@@ -528,13 +530,10 @@ export default function App() {
           <Text style={[styles.greetingLight, { color: theme.primary }]}>Progreso Académico</Text>
           <Text style={styles.screenTitleLight}>Plan de Estudios</Text>
         </View>
-        <TouchableOpacity onPress={() => {
-          signOut(auth);
-          setIsAuthenticated(false);
-          setPassword('');
-          setPlan([]); 
-          setHorarios([]); 
-        }} style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}>
+        <TouchableOpacity 
+          onPress={() => setLogoutModalVisible(true)} 
+          style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}
+        >
           <Ionicons name="log-out" size={20} color="#FCA5A5" />
         </TouchableOpacity>
       </View>
@@ -749,6 +748,46 @@ export default function App() {
             <Text style={styles.navTextDark}>Mercado</Text>
           </TouchableOpacity>
         </View>
+
+      {/* MODAL DE CONFIRMACIÓN DE SALIDA */}
+        <Modal animationType="fade" transparent={true} visible={logoutModalVisible}>
+          <View style={styles.modalOverlayDark}>
+            <View style={[styles.modalContentDark, { alignItems: 'center', paddingVertical: 40 }]}>
+              
+              <Ionicons name="log-out-outline" size={60} color="#FCA5A5" style={{marginBottom: 20}} />
+              
+              <Text style={[styles.modalTitleDark, {textAlign: 'center', marginBottom: 10}]}>¿Cerrar Sesión?</Text>
+              <Text style={{color: '#94A3B8', fontSize: 16, textAlign: 'center', marginBottom: 30, paddingHorizontal: 10}}>
+                Tendrás que volver a ingresar tus credenciales para acceder a tus materias y horarios.
+              </Text>
+
+              <View style={{flexDirection: 'row', justifyContent: 'space-between', width: '100%'}}>
+                <TouchableOpacity 
+                  style={[styles.sheetCancelBtn, {flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.8)', borderRadius: 16, marginRight: 10}]} 
+                  onPress={() => setLogoutModalVisible(false)}
+                >
+                  <Text style={styles.sheetCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.sheetSaveBtnDark, {flex: 1, backgroundColor: '#EF4444', marginTop: 0}]} 
+                  onPress={() => {
+                    signOut(auth);
+                    setIsAuthenticated(false);
+                    setPassword('');
+                    setPlan([]); 
+                    setHorarios([]);
+                    setLogoutModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.sheetSaveText, {fontSize: 16}]}>Sí, salir</Text>
+                </TouchableOpacity>
+              </View>
+
+            </View>
+          </View>
+        </Modal>
+
       </SafeAreaView>
     </View>
   );
