@@ -5,6 +5,9 @@ import {
   Animated, Dimensions, Easing, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { auth, db } from './firebaseConfig'; 
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 const { width, height } = Dimensions.get('window');
 
@@ -567,6 +570,7 @@ const ChemistryBackground = () => {
 // ==========================================
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [userCareer, setUserCareer] = useState('');
@@ -578,7 +582,7 @@ export default function App() {
   // --- ESTADOS DA FASE 2: HORÁRIOS ---
   const [horarios, setHorarios] = useState([]);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
-  const [selectedDayTab, setSelectedDayTab] = useState('Lunes'); // Dia visível no calendário
+  const [selectedDayTab, setSelectedDayTab] = useState('Lunes');
   const [newSubject, setNewSubject] = useState(null); 
   const [newDay, setNewDay] = useState('Lunes');
   const [newTime, setNewTime] = useState('');
@@ -595,12 +599,98 @@ export default function App() {
     Background: isSpaceTheme ? GalaxyBackground : ChemistryBackground
   };
 
-  const handleLogin = () => {
-    if (email.trim() !== '' && password !== '' && userCareer !== '') {
+  // --- VALIDACIONES ---
+  const isValidEmail = (email) => {
+    // Expresión regular básica para validar el formato de un email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const isValidPassword = (password) => {
+    // Expresión regular: al menos 6 caracteres, 1 mayúscula, 1 minúscula, 1 número
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{6,}$/;
+    return passwordRegex.test(password);
+  };
+
+  // --- FUNCIONES DE AUTENTICACIÓN ---
+  const handleLogin = async () => {
+    if (email.trim() === '' || password === '') {
+      Alert.alert("Faltan datos", "Por favor, ingresa tu correo y contraseña.");
+      return;
+    }
+    // NUEVO: Exigimos la carrera para iniciar sesión
+    if (userCareer === '') {
+        Alert.alert("Falta Carrera", "Selecciona a qué carrera quieres ingresar.");
+        return;
+    }
+
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      // Ya no necesitamos buscar la carrera en Firebase, usamos la seleccionada en la pantalla
       setPlan(STUDY_PLANS[userCareer] || []);
       setIsAuthenticated(true);
-    } else {
-      Alert.alert("Acesso Negado", "Preencha todos os campos para entrar no portal.");
+      
+    } catch (error) {
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        Alert.alert("Acceso denegado", "El correo o la contraseña son incorrectos.");
+      } else if (error.code === 'auth/invalid-email') {
+        Alert.alert("Correo inválido", "El formato del correo no es correcto (ej: nombre@dominio.com).");
+      } else {
+        Alert.alert("Error", error.message);
+      }
+    }
+  };
+
+  const handleRegister = async () => {
+    const trimmedEmail = email.trim();
+
+    // 1. Validar campos vacíos
+    if (trimmedEmail === '' || password === '') {
+      Alert.alert("Faltan Datos", "Debes completar tu correo y contraseña para registrarte.");
+      return;
+    }
+
+    // 2. Validar formato de email
+    if (!isValidEmail(trimmedEmail)) {
+        Alert.alert("Correo inválido", "Asegúrate de que tu correo tenga un formato válido (debe incluir '@' y un dominio).");
+        return;
+    }
+
+    // 3. Validar seguridad de la contraseña
+    if (!isValidPassword(password)) {
+      Alert.alert(
+        "Contraseña débil", 
+        "La contraseña debe tener al menos:\n\n• 6 caracteres\n• 1 letra mayúscula\n• 1 letra minúscula\n• 1 número\n\n(No se permiten caracteres especiales como @, #, $, etc.)"
+      );
+      return;
+    }
+    
+    try {
+      // Creamos la cuenta en Firebase
+      const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
+      
+      // Solo guardamos el email (opcional, Firebase ya lo guarda, pero es buena práctica para futuras consultas)
+      await setDoc(doc(db, "usuarios", userCredential.user.uid), {
+        email: trimmedEmail,
+        fechaRegistro: new Date()
+      });
+
+      // Limpiamos los campos y volvemos a la pantalla de login con un mensaje de éxito
+      Alert.alert(
+          "¡Registro Exitoso!", 
+          "Tu cuenta ha sido creada correctamente. Ahora selecciona tu carrera e inicia sesión.",
+          [{ text: "Entendido", onPress: () => {
+              setAuthMode('login');
+              setPassword(''); // Limpiamos la contraseña por seguridad
+          }}]
+      );
+      
+    } catch (error) {
+      if (error.code === 'auth/email-already-in-use') {
+        Alert.alert("El correo ya existe", "Esta dirección de correo ya está registrada. Por favor, intenta iniciar sesión.");
+      } else {
+        Alert.alert("Error al registrar", error.message);
+      }
     }
   };
 
@@ -613,7 +703,6 @@ export default function App() {
     });
   };
 
-  // Filtro Inteligente: Matérias que estão desbloqueadas mas AINDA NÃO foram aprobadas
   const availableSubjects = useMemo(() => {
     return plan.filter(s => !s.completed && isSubjectUnlocked(s));
   }, [plan]);
@@ -633,7 +722,7 @@ export default function App() {
         })
         .join(', ');
 
-      Alert.alert("Matéria Bloqueada 🔒", `Para cursar "${subject.title}" você deve aprovar:\n\n• ${missingDeps}`);
+      Alert.alert("Matéria Bloqueada 🔒", `Para cursar "${subject.title}" debes aprobar:\n\n• ${missingDeps}`);
     }
   };
 
@@ -651,7 +740,6 @@ export default function App() {
     return grouped;
   }, [plan]);
 
-  // Adicionar ao horário e mudar para essa aba automaticamente
   const addToSchedule = () => {
     if (newSubject && newDay && newTime) {
       setHorarios([...horarios, { 
@@ -667,7 +755,7 @@ export default function App() {
       setNewTime('');
       setSelectedDayTab(newDay);
     } else {
-      Alert.alert("Dados incompletos", "Por favor, selecione uma matéria, um dia e escreva um horário.");
+      Alert.alert("Datos incompletos", "Por favor, selecciona una materia, un día y escribe un horario.");
     }
   };
 
@@ -693,34 +781,61 @@ export default function App() {
               <Ionicons name={theme.iconHeader} size={60} color={theme.primary} style={{marginBottom: 10}} />
               <Text style={[styles.authTitleLine1, { textShadowColor: theme.bgLight }]}>UNIVERSO</Text>
               <Text style={[styles.authTitleLine2, { textShadowColor: theme.bgLight }]}>EXACTAS</Text>
-              <Text style={[styles.authSubtitle, { color: theme.primary }]}>A faculdade no seu bolso.</Text>
+              <Text style={[styles.authSubtitle, { color: theme.primary }]}>La facultad en tu bolsillo.</Text>
             </View>
 
             <View style={[styles.glassCard, { borderColor: theme.bgLight }]}>
+              
+              <Text style={styles.authModeTitle}>
+                {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta Nueva'}
+              </Text>
+
               <View style={styles.inputContainerDark}>
                 <Ionicons name="mail" size={20} color={theme.primary} style={styles.inputIcon} />
-                <TextInput style={styles.inputDark} placeholder="aluno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none"/>
+                <TextInput style={styles.inputDark} placeholder="aluno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address"/>
               </View>
 
               <View style={styles.inputContainerDark}>
                 <Ionicons name="lock-closed" size={20} color={theme.primary} style={styles.inputIcon} />
-                <TextInput style={styles.inputDark} placeholder="Senha de acesso" placeholderTextColor="#64748B" secureTextEntry value={password} onChangeText={setPassword}/>
+                <TextInput style={styles.inputDark} placeholder="Contraseña" placeholderTextColor="#64748B" secureTextEntry value={password} onChangeText={setPassword}/>
               </View>
 
-              <TouchableOpacity style={styles.selectorButtonDark} onPress={() => setCareerModalVisible(true)}>
-                <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
-                  <Ionicons name="school" size={20} color={theme.primary} style={styles.inputIcon} />
-                  <Text style={[styles.selectorTextDark, !userCareer && {color: '#64748B'}]} numberOfLines={1}>
-                    {userCareer ? userCareer : "Selecione seu curso..."}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-down" size={20} color="#64748B" />
-              </TouchableOpacity>
+              {/* EL SELECTOR AHORA ESTÁ EN LOGIN, NO EN REGISTRO */}
+              {authMode === 'login' && (
+                <TouchableOpacity style={styles.selectorButtonDark} onPress={() => setCareerModalVisible(true)}>
+                  <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
+                    <Ionicons name="school" size={20} color={theme.primary} style={styles.inputIcon} />
+                    <Text style={[styles.selectorTextDark, !userCareer && {color: '#64748B'}]} numberOfLines={1}>
+                      {userCareer ? userCareer : "Selecciona a qué carrera ingresar..."}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-down" size={20} color="#64748B" />
+                </TouchableOpacity>
+              )}
 
-              <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={handleLogin} activeOpacity={0.8}>
-                <Text style={styles.loginButtonText}>{theme.actionText}</Text>
-                <Ionicons name={theme.actionIcon} size={20} color="#FFF" />
-              </TouchableOpacity>
+              {authMode === 'login' ? (
+                <>
+                  <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={handleLogin} activeOpacity={0.8}>
+                    <Text style={styles.loginButtonText}>Entrar</Text>
+                    <Ionicons name="log-in-outline" size={20} color="#FFF" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('register'); setUserCareer(''); setPassword(''); }}>
+                    <Text style={styles.switchModeText}>¿No tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Regístrate aquí</Text></Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]} onPress={handleRegister} activeOpacity={0.8}>
+                    <Text style={styles.loginButtonText}>Registrarme</Text>
+                    <Ionicons name="person-add-outline" size={20} color="#FFF" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('login'); setPassword(''); }}>
+                    <Text style={styles.switchModeText}>¿Ya tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Inicia sesión</Text></Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
 
           </KeyboardAvoidingView>
@@ -760,7 +875,12 @@ export default function App() {
           <Text style={[styles.greetingLight, { color: theme.primary }]}>Progreso Académico</Text>
           <Text style={styles.screenTitleLight}>Plan de Estudios</Text>
         </View>
-        <TouchableOpacity onPress={() => setIsAuthenticated(false)} style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}>
+        <TouchableOpacity onPress={() => {
+          signOut(auth);
+          setIsAuthenticated(false);
+          setPassword('');
+          // Mantenemos el email para que sea más fácil volver a entrar
+        }} style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}>
           <Ionicons name="log-out" size={20} color="#FCA5A5" />
         </TouchableOpacity>
       </View>
@@ -816,7 +936,6 @@ export default function App() {
   );
 
   const renderHorarios = () => {
-    // Filtramos os eventos baseando-se no dia selecionado nas abas
     const eventosDelDia = horarios.filter(h => h.day === selectedDayTab);
 
     return (
@@ -828,7 +947,6 @@ export default function App() {
           </View>
         </View>
 
-        {/* Abas de Dias Superiores (Estilo Calendário) */}
         <View style={styles.calendarTabs}>
           {DIAS_SEMANA.map(dia => (
             <TouchableOpacity 
@@ -870,7 +988,7 @@ export default function App() {
             ) : (
               <View style={styles.freeDayBox}>
                 <Ionicons name="cafe" size={40} color="#475569" style={{marginBottom: 10}} />
-                <Text style={styles.freeDayTitle}>Dia libre de cursada</Text>
+                <Text style={styles.freeDayTitle}>Día libre de cursada</Text>
                 <Text style={styles.freeDayText}>Aprovecha para estudiar o descansar.</Text>
               </View>
             )}
@@ -878,19 +996,16 @@ export default function App() {
           <View style={{height: 100}} />
         </ScrollView>
 
-        {/* Botão Flutuante para adicionar aulas */}
         <TouchableOpacity style={[styles.fabBtnDark, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={() => setScheduleModalVisible(true)}>
           <Ionicons name="add" size={30} color="#FFF" />
         </TouchableOpacity>
 
-        {/* Modal: Formulário Inteligente de Horários */}
         <Modal animationType="slide" transparent={true} visible={scheduleModalVisible}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlayDark}>
             <View style={styles.modalSheetDark}>
               <View style={styles.sheetHandleDark} />
               <Text style={styles.sheetTitleLight}>Agregar Materia</Text>
               
-              {/* Seletor Inteligente de Matérias Desbloqueadas */}
               <Text style={styles.sheetLabelDark}>Materias disponibles para cursar:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 25, maxHeight: 50}}>
                 {availableSubjects.length > 0 ? availableSubjects.map(s => (
@@ -904,11 +1019,11 @@ export default function App() {
                     </Text>
                   </TouchableOpacity>
                 )) : (
-                  <Text style={{color: '#64748B', alignSelf: 'center', fontStyle: 'italic', marginTop: 10}}>Não há matérias desbloqueadas.</Text>
+                  <Text style={{color: '#64748B', alignSelf: 'center', fontStyle: 'italic', marginTop: 10}}>No hay materias desbloqueadas.</Text>
                 )}
               </ScrollView>
 
-              <Text style={styles.sheetLabelDark}>Dia de semana:</Text>
+              <Text style={styles.sheetLabelDark}>Día de semana:</Text>
               <View style={styles.daysRow}>
                 {DIAS_SEMANA.map(d => (
                   <TouchableOpacity 
@@ -924,7 +1039,7 @@ export default function App() {
               </View>
 
               <View style={styles.sheetInputGroup}>
-                <Text style={styles.sheetLabelDark}>Seleccion de Horario:</Text>
+                <Text style={styles.sheetLabelDark}>Selección de Horario:</Text>
                 <TextInput 
                   style={styles.sheetInputDark} 
                   placeholder="Ex. 08:00 a 12:00 hs" 
@@ -970,7 +1085,7 @@ export default function App() {
             </View>
             <Text style={[styles.navTextDark, activeTab === 'Plan' && { color: theme.primary, fontWeight: '900' }, {marginTop: 5}]}>Plan</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => Alert.alert("Fase 3", "O Mercado Drive estará disponible en la próxima actualización.")}>
+          <TouchableOpacity style={styles.navItem} onPress={() => Alert.alert("Fase 3", "El Mercado Drive estará disponible en la próxima actualización.")}>
             <Ionicons name="library-outline" size={26} color="#64748B" />
             <Text style={styles.navTextDark}>Mercado</Text>
           </TouchableOpacity>
@@ -995,8 +1110,10 @@ const styles = StyleSheet.create({
   authTitleLine1: { fontSize: 40, fontWeight: '300', color: '#FFF', letterSpacing: 8, marginBottom: -10, textShadowOffset: {width: 0, height: 2}, textShadowRadius: 10 },
   authTitleLine2: { fontSize: 50, fontWeight: '900', color: '#FFF', letterSpacing: 2, textShadowOffset: {width: 0, height: 2}, textShadowRadius: 15 },
   authSubtitle: { fontSize: 14, marginTop: 15, fontWeight: '600', letterSpacing: 0.5, textAlign: 'center' },
-  glassCard: { backgroundColor: 'rgba(15, 23, 42, 0.65)', padding: 25, borderRadius: 30, borderWidth: 1 },
-  inputContainerDark: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderRadius: 16, paddingHorizontal: 15, marginBottom: 15, borderWidth: 1, borderColor: '#334155' },
+  authModeTitle: { fontSize: 20, fontWeight: 'bold', color: '#FFF', marginBottom: 20, textAlign: 'center' },
+  switchModeBtn: { marginTop: 20, alignItems: 'center', paddingVertical: 10 },
+  switchModeText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
+  switchModeTextBold: { fontWeight: '900' },
   inputIcon: { marginRight: 10 },
   inputDark: { flex: 1, color: '#FFF', paddingVertical: 18, fontSize: 16 },
   selectorButtonDark: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderRadius: 16, padding: 18, marginBottom: 25, borderWidth: 1, borderColor: '#334155' },

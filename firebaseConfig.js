@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth"; // <-- NUEVO: Importamos Auth
 
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -10,8 +11,7 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
 };
 
-// Inicializamos Firebase
 const app = initializeApp(firebaseConfig);
 
-// Exportamos la base de datos para poder importarla en otros archivos (como App.js)
 export const db = getFirestore(app);
+export const auth = getAuth(app); // <-- NUEVO: Exportamos la variable auth
