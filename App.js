@@ -837,68 +837,74 @@ export default function App() {
         <DynamicBackground />
 
         <SafeAreaView style={{ flex: 1 }}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContent}>
-            
-            <View style={styles.logoContainer}>
-              <Ionicons name={theme.iconHeader} size={60} color={theme.primary} style={{marginBottom: 10}} />
-              <Text style={[styles.authTitleLine1, { textShadowColor: theme.bgLight }]}>UNIVERSO</Text>
-              <Text style={[styles.authTitleLine2, { textShadowColor: theme.bgLight }]}>EXACTAS</Text>
-              <Text style={[styles.authSubtitle, { color: theme.primary }]}>La facultad en tu bolsillo.</Text>
-            </View>
-
-            <View style={[styles.glassCard, { borderColor: theme.bgLight }]}>
-              
-              <Text style={styles.authModeTitle}>
-                {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta Nueva'}
-              </Text>
-
-              <View style={styles.inputContainerDark}>
-                <Ionicons name="mail" size={20} color={theme.primary} style={styles.inputIcon} />
-                <TextInput style={styles.inputDark} placeholder="alumno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address"/>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            {/* NUEVO: Envolvemos el contenido en un ScrollView para evitar que se corte en pantallas chicas */}
+            <ScrollView 
+              contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 30, paddingVertical: 20 }} 
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={[styles.logoContainer, { marginBottom: 30 }]}>
+                <Ionicons name={theme.iconHeader} size={60} color={theme.primary} style={{marginBottom: 10}} />
+                <Text style={[styles.authTitleLine1, { textShadowColor: theme.bgLight }]}>UNIVERSO</Text>
+                <Text style={[styles.authTitleLine2, { textShadowColor: theme.bgLight }]}>EXACTAS</Text>
+                <Text style={[styles.authSubtitle, { color: theme.primary }]}>La facultad en tu bolsillo.</Text>
               </View>
 
-              <View style={styles.inputContainerDark}>
-                <Ionicons name="lock-closed" size={20} color={theme.primary} style={styles.inputIcon} />
-                <TextInput style={styles.inputDark} placeholder="Contraseña" placeholderTextColor="#64748B" secureTextEntry value={password} onChangeText={setPassword}/>
+              <View style={[styles.glassCard, { borderColor: theme.bgLight }]}>
+                
+                <Text style={styles.authModeTitle}>
+                  {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta Nueva'}
+                </Text>
+
+                <View style={styles.inputContainerDark}>
+                  <Ionicons name="mail" size={20} color={theme.primary} style={styles.inputIcon} />
+                  <TextInput style={styles.inputDark} placeholder="alumno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none"/>
+                </View>
+
+                <View style={styles.inputContainerDark}>
+                  <Ionicons name="lock-closed" size={20} color={theme.primary} style={styles.inputIcon} />
+                  <TextInput style={styles.inputDark} placeholder="Contraseña" placeholderTextColor="#64748B" secureTextEntry value={password} onChangeText={setPassword}/>
+                </View>
+
+                {/* EL SELECTOR AHORA ESTÁ EN LOGIN, NO EN REGISTRO */}
+                {authMode === 'login' && (
+                  <TouchableOpacity style={styles.selectorButtonDark} onPress={() => setCareerModalVisible(true)}>
+                    <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
+                      <Ionicons name="school" size={20} color={theme.primary} style={styles.inputIcon} />
+                      <Text style={[styles.selectorTextDark, !userCareer && {color: '#64748B'}]} numberOfLines={1}>
+                        {userCareer ? userCareer : "Selecciona a qué carrera ingresar..."}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-down" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                )}
+
+                {authMode === 'login' ? (
+                  <>
+                    <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={handleLogin} activeOpacity={0.8}>
+                      <Text style={styles.loginButtonText}>Entrar</Text>
+                      <Ionicons name="log-in-outline" size={20} color="#FFF" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('register'); setUserCareer(''); setPassword(''); }}>
+                      <Text style={styles.switchModeText}>¿No tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Regístrate aquí</Text></Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]} onPress={handleRegister} activeOpacity={0.8}>
+                      <Text style={styles.loginButtonText}>Registrarme</Text>
+                      <Ionicons name="person-add-outline" size={20} color="#FFF" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('login'); setPassword(''); }}>
+                      <Text style={styles.switchModeText}>¿Ya tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Inicia sesión</Text></Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
-
-              {authMode === 'login' && (
-                <TouchableOpacity style={styles.selectorButtonDark} onPress={() => setCareerModalVisible(true)}>
-                  <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
-                    <Ionicons name="school" size={20} color={theme.primary} style={styles.inputIcon} />
-                    <Text style={[styles.selectorTextDark, !userCareer && {color: '#64748B'}]} numberOfLines={1}>
-                      {userCareer ? userCareer : "Selecciona a qué carrera ingresar..."}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-down" size={20} color="#64748B" />
-                </TouchableOpacity>
-              )}
-
-              {authMode === 'login' ? (
-                <>
-                  <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={handleLogin} activeOpacity={0.8}>
-                    <Text style={styles.loginButtonText}>Entrar</Text>
-                    <Ionicons name="log-in-outline" size={20} color="#FFF" />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('register'); setUserCareer(''); setPassword(''); }}>
-                    <Text style={styles.switchModeText}>¿No tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Regístrate aquí</Text></Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]} onPress={handleRegister} activeOpacity={0.8}>
-                    <Text style={styles.loginButtonText}>Registrarme</Text>
-                    <Ionicons name="person-add-outline" size={20} color="#FFF" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('login'); setPassword(''); }}>
-                    <Text style={styles.switchModeText}>¿Ya tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Inicia sesión</Text></Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-
+            </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
 
