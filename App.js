@@ -15,7 +15,6 @@ const { width, height } = Dimensions.get('window');
 // 1. BASE DE DATOS: MATERIAS Y CORRELATIVAS (UNLP EXACTAS)
 // ==========================================
 
-// Diccionario Maestro de Planes de Estudio (Corregido y Unificado)
 const STUDY_PLANS = {
   "Lic. en Física": [
     { id: 'E0201', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
@@ -147,7 +146,7 @@ const STUDY_PLANS = {
     { id: 'B0211', title: 'Bromatología', year: 5, completed: false, dependencies: ['U0204'] },
     { id: 'B0212', title: 'Endocrinología', year: 6, completed: false, dependencies: ['B0210'] },
     { id: 'B0213', title: 'Bioquímica Patológica', year: 6, completed: false, dependencies: ['U0203', 'U0209'] },
-    { id: 'B0214', title: 'Parasitología', year: 6, completed: false, dependencies: ['B0205'] },    
+    { id: 'B0214', title: 'Parasitología', year: 6, completed: false, dependencies: ['B0205'] },  
     { id: 'O0220', title: 'Virología Clínica', year: 6, completed: false, dependencies: ['U0204', 'B0206'] },
     { id: 'B0215', title: 'Medicina Interna', year: 6, completed: false, dependencies: ['B0212', 'B0213', 'B0214'] },
     { id: 'OPT-6.1', title: 'Materia Optativa 1', year: 6, completed: false, dependencies: [] },
@@ -179,7 +178,7 @@ const STUDY_PLANS = {
     { id: 'U0202', title: 'Química Biológica', year: 3, completed: false, dependencies: ['A0208', 'A0212'] },
     { id: 'F0216', title: 'Fisiología', year: 3, completed: false, dependencies: ['U0201'] },
     { id: 'AEFIII', title: 'Ámbitos del Ej. Farmacéutico III', year: 3, completed: false, dependencies: ['AEFII'] },
-    { id: 'U0205', title: 'Diseño de Experimentos', year: 3, completed: false, dependencies: ['A0213'] },     
+    { id: 'U0205', title: 'Diseño de Experimentos', year: 3, completed: false, dependencies: ['A0213'] },    
     { id: 'F0203', title: 'Fisiopatología', year: 4, completed: false, dependencies: ['F0216', 'U0202'] },
     { id: 'U0204', title: 'Microbiología General', year: 4, completed: false, dependencies: ['U0202'] },
     { id: 'F0204', title: 'Biofarmacia y Farmacocinética', year: 4, completed: false, dependencies: ['F0216', 'U0205'] },
@@ -435,18 +434,12 @@ const STUDY_PLANS = {
   ]
 };
 
-
-// Las carreras que activan el tema Espacial (Ahora coinciden exacto con los nombres)
 const SPACE_CAREERS = ["Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica"];
-
-// === PEGA ESTO EXACTAMENTE DEBAJO DEL CIERRE DE STUDY_PLANS ( }; ) ===
-
 const CARRERAS = Object.keys(STUDY_PLANS);
 
-// Días y Horas para la Grilla Semanal del Calendario
 const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
-const MIN_HORA = 8;  // El calendario inicia a las 08:00 hs
-const MAX_HORA = 22; // El calendario termina a las 22:00 hs
+const MIN_HORA = 8;  
+const MAX_HORA = 22; 
 const HORAS = Array.from({ length: MAX_HORA - MIN_HORA + 1 }, (_, i) => i + MIN_HORA);
 
 // ==========================================
@@ -574,7 +567,6 @@ const ChemistryBackground = () => {
 // 3. COMPONENTE PRINCIPAL (APP)
 // ==========================================
 export default function App() {
-  // Estados de Autenticación
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [email, setEmail] = useState('');
@@ -582,20 +574,17 @@ export default function App() {
   const [userCareer, setUserCareer] = useState('');
   const [careerModalVisible, setCareerModalVisible] = useState(false);
 
-  // Estados de Plan de Estudio
   const [activeTab, setActiveTab] = useState('Plan');
   const [plan, setPlan] = useState([]);
   
-  // --- ESTADOS DE LA FASE 2: HORARIOS (GRILLA) ---
   const [horarios, setHorarios] = useState([]);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [selectedDayTab, setSelectedDayTab] = useState('Lunes');
   const [newSubject, setNewSubject] = useState(null); 
   const [newDay, setNewDay] = useState('Lunes');
-  const [newStartTime, setNewStartTime] = useState('8'); // Hora de inicio
-  const [newEndTime, setNewEndTime] = useState('10');    // Hora de fin
+  const [newStartTime, setNewStartTime] = useState('8'); 
+  const [newEndTime, setNewEndTime] = useState('10');    
 
-  // Lógica de Temas (Espacio o Laboratorio)
   const isSpaceTheme = !userCareer || SPACE_CAREERS.includes(userCareer);
   
   const theme = {
@@ -608,26 +597,22 @@ export default function App() {
     Background: isSpaceTheme ? GalaxyBackground : ChemistryBackground
   };
 
-  // --- VALIDACIONES ---
   const isValidEmail = (email) => {
-    // Expresión regular básica para validar el formato de un email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
 
   const isValidPassword = (password) => {
-    // Expresión regular: al menos 6 caracteres, 1 mayúscula, 1 minúscula, 1 número
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{6,}$/;
     return passwordRegex.test(password);
   };
 
-  // --- FUNCIONES DE AUTENTICACIÓN ---
+  // --- LOGICA DE FIREBASE MODIFICADA ---
   const handleLogin = async () => {
     if (email.trim() === '' || password === '') {
       Alert.alert("Faltan datos", "Por favor, ingresa tu correo y contraseña.");
       return;
     }
-    // NUEVO: Exigimos la carrera para iniciar sesión
     if (userCareer === '') {
         Alert.alert("Falta Carrera", "Selecciona a qué carrera quieres ingresar.");
         return;
@@ -635,8 +620,27 @@ export default function App() {
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-      // Ya no necesitamos buscar la carrera en Firebase, usamos la seleccionada en la pantalla
-      setPlan(STUDY_PLANS[userCareer] || []);
+      
+      // 1. Descargamos los datos del usuario de Firestore
+      const userDoc = await getDoc(doc(db, "usuarios", userCredential.user.uid));
+      
+      let savedCompletedIds = [];
+      let savedHorarios = [];
+
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        savedCompletedIds = data.completedSubjects || [];
+        savedHorarios = data.horarios || [];
+      }
+
+      // 2. Armamos el plan de estudios marcando como 'completed' solo las que vinieron de Firebase
+      const basePlan = STUDY_PLANS[userCareer].map(subj => ({
+        ...subj,
+        completed: savedCompletedIds.includes(subj.id)
+      }));
+
+      setPlan(basePlan);
+      setHorarios(savedHorarios);
       setIsAuthenticated(true);
       
     } catch (error) {
@@ -653,19 +657,14 @@ export default function App() {
   const handleRegister = async () => {
     const trimmedEmail = email.trim();
 
-    // 1. Validar campos vacíos
     if (trimmedEmail === '' || password === '') {
       Alert.alert("Faltan Datos", "Debes completar tu correo y contraseña para registrarte.");
       return;
     }
-
-    // 2. Validar formato de email
     if (!isValidEmail(trimmedEmail)) {
         Alert.alert("Correo inválido", "Asegúrate de que tu correo tenga un formato válido (debe incluir '@' y un dominio).");
         return;
     }
-
-    // 3. Validar seguridad de la contraseña
     if (!isValidPassword(password)) {
       Alert.alert(
         "Contraseña débil", 
@@ -675,22 +674,22 @@ export default function App() {
     }
     
     try {
-      // Creamos la cuenta en Firebase
       const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       
-      // Solo guardamos el email (opcional, Firebase ya lo guarda, pero es buena práctica para futuras consultas)
+      // Creamos el documento base del usuario en Firestore
       await setDoc(doc(db, "usuarios", userCredential.user.uid), {
         email: trimmedEmail,
-        fechaRegistro: new Date()
+        fechaRegistro: new Date(),
+        completedSubjects: [],
+        horarios: []
       });
 
-      // Limpiamos los campos y volvemos a la pantalla de login con un mensaje de éxito
       Alert.alert(
           "¡Registro Exitoso!", 
           "Tu cuenta ha sido creada correctamente. Ahora selecciona tu carrera e inicia sesión.",
           [{ text: "Entendido", onPress: () => {
               setAuthMode('login');
-              setPassword(''); // Limpiamos la contraseña por seguridad
+              setPassword(''); 
           }}]
       );
       
@@ -703,7 +702,6 @@ export default function App() {
     }
   };
 
-  // --- LÓGICA DE CORRELATIVAS ---
   const isSubjectUnlocked = (subject) => {
     if (!subject.dependencies || subject.dependencies.length === 0) return true;
     return subject.dependencies.every(depId => {
@@ -712,15 +710,30 @@ export default function App() {
     });
   };
 
-  // Filtro Inteligente: Materias que están desbloqueadas pero AÚN NO han sido aprobadas
   const availableSubjects = useMemo(() => {
     if (!plan) return [];
     return plan.filter(s => !s.completed && isSubjectUnlocked(s));
   }, [plan]);
 
-  const handleSubjectPress = (subject) => {
+  // --- GUARDADO DE MATERIAS EN FIREBASE ---
+  const handleSubjectPress = async (subject) => {
     if (isSubjectUnlocked(subject)) {
-      setPlan(plan.map(subj => subj.id === subject.id ? { ...subj, completed: !subj.completed } : subj));
+      // 1. Actualizamos la pantalla (Estado Local)
+      const newPlan = plan.map(subj => subj.id === subject.id ? { ...subj, completed: !subj.completed } : subj);
+      setPlan(newPlan);
+
+      // 2. Guardamos solo los IDs aprobados en Firebase
+      if (auth.currentUser) {
+        const completedIds = newPlan.filter(s => s.completed).map(s => s.id);
+        try {
+            await setDoc(doc(db, "usuarios", auth.currentUser.uid), {
+                completedSubjects: completedIds
+            }, { merge: true }); // Merge true evita borrar los horarios!
+        } catch(error) {
+            console.error("Error guardando progreso:", error);
+        }
+      }
+
     } else {
       const missingDeps = subject.dependencies
         .filter(depId => {
@@ -751,13 +764,14 @@ export default function App() {
     return grouped;
   }, [plan]);
 
-  // Agregar bloque a la grilla de horarios
-  const addToSchedule = () => {
+  // --- GUARDADO DE HORARIOS EN FIREBASE ---
+  const addToSchedule = async () => {
     const start = parseInt(newStartTime);
     const end = parseInt(newEndTime);
 
     if (newSubject && newDay && start && end && start < end && start >= MIN_HORA && end <= MAX_HORA + 1) {
-      setHorarios([...horarios, { 
+      
+      const newHorario = { 
         id: Math.random().toString(), 
         subject: newSubject.title, 
         code: newSubject.id,
@@ -765,18 +779,50 @@ export default function App() {
         start: start, 
         end: end, 
         color: theme.primary 
-      }]);
+      };
+
+      const updatedHorarios = [...horarios, newHorario];
+      
+      // 1. Actualizamos Pantalla
+      setHorarios(updatedHorarios);
       setScheduleModalVisible(false);
       setNewSubject(null);
       setNewStartTime('8');
       setNewEndTime('10');
+      setSelectedDayTab(newDay);
+
+      // 2. Actualizamos Firebase
+      if (auth.currentUser) {
+        try {
+            await setDoc(doc(db, "usuarios", auth.currentUser.uid), {
+                horarios: updatedHorarios
+            }, { merge: true }); // Merge true evita borrar las materias aprobadas!
+        } catch(error) {
+            console.error("Error guardando horario:", error);
+        }
+      }
+
     } else {
-      Alert.alert("Datos incompletos", "Por favor, selecciona una materia, un día y escribe un horario.");
+      Alert.alert("Datos incompletos", "Por favor, selecciona una materia, un día y un horario válido (ej: 8 a 10).");
     }
   };
 
-  const removeScheduleItem = (id) => {
-    setHorarios(horarios.filter(item => item.id !== id));
+  const removeScheduleItem = async (id) => {
+    const updatedHorarios = horarios.filter(item => item.id !== id);
+    
+    // 1. Actualizamos Pantalla
+    setHorarios(updatedHorarios);
+
+    // 2. Borramos de Firebase
+    if (auth.currentUser) {
+        try {
+            await setDoc(doc(db, "usuarios", auth.currentUser.uid), {
+                horarios: updatedHorarios
+            }, { merge: true });
+        } catch(error) {
+            console.error("Error borrando horario:", error);
+        }
+    }
   };
 
   const DynamicBackground = theme.Background;
@@ -900,7 +946,8 @@ export default function App() {
           signOut(auth);
           setIsAuthenticated(false);
           setPassword('');
-          // Mantenemos el email para que sea más fácil volver a entrar
+          setPlan([]); // Limpiamos el plan al salir
+          setHorarios([]); // Limpiamos los horarios al salir
         }} style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}>
           <Ionicons name="log-out" size={20} color="#FCA5A5" />
         </TouchableOpacity>
@@ -966,12 +1013,10 @@ export default function App() {
           </View>
         </View>
 
-        {/* GRILLA DEL CALENDARIO TIPO AGENDA DEL ESTUDIANTE */}
         <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10 }}>
             <View style={styles.gridContainer}>
               
-              {/* Columna Eje Y: Horas */}
               <View style={styles.timeColumn}>
                 <View style={styles.emptyCorner} />
                 {HORAS.map(h => (
@@ -981,7 +1026,6 @@ export default function App() {
                 ))}
               </View>
 
-              {/* Columnas Eje X: Días */}
               {DIAS_SEMANA.map(dia => (
                 <View key={dia} style={styles.dayColumn}>
                   <View style={styles.dayColHeader}>
@@ -989,14 +1033,12 @@ export default function App() {
                   </View>
                   
                   <View style={styles.dayColBody}>
-                    {/* Líneas horizontales de fondo */}
                     {HORAS.map(h => (
                       <View key={h} style={styles.gridLine} />
                     ))}
 
-                    {/* Bloques de materias posicionados matemáticamente */}
                     {horarios.filter(h => h.day === dia).map(evento => {
-                      const topPosition = (evento.start - MIN_HORA) * 60; // 60px por hora
+                      const topPosition = (evento.start - MIN_HORA) * 60; 
                       const blockHeight = (evento.end - evento.start) * 60;
 
                       return (
@@ -1026,12 +1068,10 @@ export default function App() {
           <View style={{height: 100}} />
         </ScrollView>
 
-        {/* Botón Flotante + */}
         <TouchableOpacity style={[styles.fabBtnDark, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={() => setScheduleModalVisible(true)}>
           <Ionicons name="add" size={30} color="#FFF" />
         </TouchableOpacity>
 
-        {/* Modal: Formulario Inteligente */}
         <Modal animationType="slide" transparent={true} visible={scheduleModalVisible}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlayDark}>
             <View style={styles.modalSheetDark}>
@@ -1128,9 +1168,7 @@ export default function App() {
   );
 }
 
-// ==========================================
-// 5. ESTILOS BASE
-// ==========================================
+// ESTILOS
 const styles = StyleSheet.create({
   content: { flex: 1 },
   screenContainer: { padding: 24, paddingTop: Platform.OS === 'android' ? 40 : 24 },
@@ -1187,12 +1225,11 @@ const styles = StyleSheet.create({
   subjectTextCompletedDark: { textDecorationLine: 'line-through', color: '#64748B' },
   checkboxDark: { width: 26, height: 26, borderRadius: 8, borderWidth: 2, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' },
 
-  // --- ESTILOS DE LA GRILLA DEL CALENDARIO ---
   gridContainer: { flexDirection: 'row', marginTop: 10, paddingBottom: 20 },
   timeColumn: { width: 50, marginRight: 5 },
   emptyCorner: { height: 40, marginBottom: 10 },
-  timeLabelContainer: { height: 60, justifyContent: 'flex-start', alignItems: 'center' }, // 60px por hora
-  timeLabelText: { color: '#64748B', fontSize: 12, fontWeight: '700', marginTop: -8 }, // Centrado en la línea
+  timeLabelContainer: { height: 60, justifyContent: 'flex-start', alignItems: 'center' }, 
+  timeLabelText: { color: '#64748B', fontSize: 12, fontWeight: '700', marginTop: -8 }, 
   
   dayColumn: { width: 110, marginRight: 5 },
   dayColHeader: { height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#334155' },
