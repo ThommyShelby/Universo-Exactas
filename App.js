@@ -9,8 +9,10 @@ import { Ionicons } from '@expo/vector-icons';
 const { width, height } = Dimensions.get('window');
 
 // ==========================================
-// 1. BASE DE DATOS: MATERIAS Y CORRELATIVAS (UNLP EXACTAS)
+// 1. BASE DE DATOS: MATERIAS Y CORRELATIVAS
 // ==========================================
+
+const SPACE_CAREERS = ["Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica"];
 
 const STUDY_PLANS = {
   "Lic. en Física": [
@@ -193,7 +195,7 @@ const STUDY_PLANS = {
     { id: 'TOX', title: 'Toxicología Farmacéutica', year: 6, completed: false, dependencies: ['F0205', 'F0208'] },
     { id: 'OPT-6.1', title: 'Materia Optativa 1', year: 6, completed: false, dependencies: [] },
     { id: 'OPT-6.2', title: 'Materia Optativa 2', year: 6, completed: false, dependencies: [] },
-    { id: 'F0215', title: 'Práctica Farmacéutica', year: 6, completed: false, dependencies: ['F0209', 'F0212', 'F0213', 'F0214'] }
+    { id: 'F0215', title: 'Práctica Farmacéutica', year: 6, completed: false, dependencies: ['F0209', 'F0213', 'F0214'] }
   ],
   "Lic. en Biotecnología": [
     { id: 'A0201', title: 'Álgebra', year: 1, completed: false, dependencies: [] },
@@ -431,7 +433,7 @@ const STUDY_PLANS = {
   ]
 };
 
-// Generamos la lista de carreras a partir del diccionario (Asegura que sean idénticas)
+// Generamos la lista de carreras automáticamente
 const CARRERAS = Object.keys(STUDY_PLANS);
 
 const INITIAL_AGENDA = [
@@ -655,7 +657,6 @@ export default function App() {
     }
   };
 
-  // Asignamos el componente dinámico a una variable que React entienda
   const DynamicBackground = theme.Background;
 
   if (!isAuthenticated) {
@@ -879,9 +880,6 @@ export default function App() {
   );
 }
 
-// ==========================================
-// 5. ESTILOS BASE
-// ==========================================
 const styles = StyleSheet.create({
   content: { flex: 1 },
   screenContainer: { padding: 24, paddingTop: Platform.OS === 'android' ? 40 : 24 },
