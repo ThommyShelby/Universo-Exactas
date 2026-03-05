@@ -12,430 +12,17 @@ import { doc, setDoc, getDoc } from 'firebase/firestore';
 const { width, height } = Dimensions.get('window');
 
 // ==========================================
-// 1. BASE DE DATOS: MATERIAS Y CORRELATIVAS (UNLP EXACTAS)
+// 1. CONSTANTES GLOBALES
 // ==========================================
-
-const STUDY_PLANS = {
-  "Lic. en Física": [
-    { id: 'E0201', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'E0202', title: 'Álgebra', year: 1, completed: false, dependencies: [] },
-    { id: 'E0204', title: 'Física General I', year: 1, completed: false, dependencies: [] },
-    { id: 'E0205', title: 'Física Experimental I', year: 1, completed: false, dependencies: [] },
-    { id: 'E0206', title: 'Física General II', year: 1, completed: false, dependencies: ['E0204', 'E0205'] },
-    { id: 'E0207', title: 'Física Experimental II', year: 1, completed: false, dependencies: ['E0204', 'E0205'] },
-    { id: 'E0203', title: 'Análisis Matemático II', year: 2, completed: false, dependencies: ['E0201', 'E0202'] },
-    { id: 'OPT-ALG', title: 'Álgebra Lineal', year: 2, completed: false, dependencies: ['E0202'] },
-    { id: 'E0208', title: 'Física General III', year: 2, completed: false, dependencies: ['E0206', 'E0207'] },
-    { id: 'E0209', title: 'Física Experimental III', year: 2, completed: false, dependencies: ['E0206', 'E0207'] },
-    { id: 'S0201', title: 'Física General IV', year: 2, completed: false, dependencies: ['E0208', 'E0209'] },
-    { id: 'S0202', title: 'Física Experimental IV', year: 2, completed: false, dependencies: ['E0208', 'E0209'] },
-    { id: 'S0203', title: 'Matemáticas Especiales I', year: 2, completed: false, dependencies: ['E0203'] },
-    { id: 'S0204', title: 'Física Macroscópica', year: 2, completed: false, dependencies: ['E0206'] },
-    { id: 'S0205', title: 'Mecánica Analítica', year: 3, completed: false, dependencies: ['E0203', 'E0208', 'E0209'] },
-    { id: 'S0206', title: 'Matemáticas Especiales II', year: 3, completed: false, dependencies: ['S0203'] },
-    { id: 'S0207', title: 'Electromagnetismo', year: 3, completed: false, dependencies: ['E0208', 'E0209', 'S0203'] },
-    { id: 'S0208', title: 'Experimentos Electromagnéticos', year: 3, completed: false, dependencies: ['E0208', 'E0209', 'S0203'] },
-    { id: 'S0209', title: 'Mecánica Cuántica I', year: 3, completed: false, dependencies: ['S0207', 'S0208'] },
-    { id: 'S0210', title: 'Experimentos Cuánticos I', year: 3, completed: false, dependencies: ['S0207', 'S0208'] },
-    { id: 'OPT-3.1', title: 'Materia Optativa 1', year: 3, completed: false, dependencies: [] },
-    { id: 'OPT-3.2', title: 'Materia Optativa 2', year: 3, completed: false, dependencies: [] },
-    { id: 'OPT-3.3', title: 'Materia Optativa 3', year: 3, completed: false, dependencies: [] },
-    { id: 'S0211', title: 'Mecánica Cuántica II', year: 4, completed: false, dependencies: ['S0209', 'S0210'] },
-    { id: 'S0212', title: 'Experimentos Cuánticos II', year: 4, completed: false, dependencies: ['S0209', 'S0210'] },
-    { id: 'S0213', title: 'Mecánica Estadística', year: 4, completed: false, dependencies: ['S0209', 'S0210'] },
-    { id: 'OPT-4.1', title: 'Materia Optativa 4', year: 4, completed: false, dependencies: [] },
-    { id: 'OPT-4.2', title: 'Materia Optativa 5', year: 4, completed: false, dependencies: [] },
-    { id: 'OPT-4.3', title: 'Materia Optativa 6', year: 4, completed: false, dependencies: [] },
-    { id: 'OPT-4.4', title: 'Materia Optativa 7', year: 4, completed: false, dependencies: [] },
-    { id: 'S0214', title: 'Trabajo Final de Diploma', year: 5, completed: false, dependencies: ['S0211', 'S0213'] }
-  ],
-  "Lic. en Matemática": [
-    { id: 'E0201', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'E0202', title: 'Álgebra', year: 1, completed: false, dependencies: [] },
-    { id: 'E0203', title: 'Análisis Matemático II', year: 2, completed: false, dependencies: ['E0201', 'E0202'] },
-    { id: 'M0201', title: 'Álgebra Lineal', year: 2, completed: false, dependencies: ['E0202'] },
-    { id: 'M0202', title: 'Complementos de Análisis', year: 2, completed: false, dependencies: ['E0203'] },
-    { id: 'M0203', title: 'Probabilidades', year: 2, completed: false, dependencies: ['E0203'] },
-    { id: 'M0204', title: 'Elem. de Matemática Aplicada', year: 2, completed: false, dependencies: ['E0201', 'E0202'] },
-    { id: 'M0205', title: 'Estructuras Algebraicas', year: 3, completed: false, dependencies: ['M0201'] },
-    { id: 'M0206', title: 'Medida e Integración', year: 3, completed: false, dependencies: ['M0202'] },
-    { id: 'M0207', title: 'Geometría Diferencial', year: 3, completed: false, dependencies: ['M0201', 'M0202'] },
-    { id: 'M0208', title: 'Funciones Analíticas', year: 3, completed: false, dependencies: ['M0202'] },
-    { id: 'M0209', title: 'Topología', year: 4, completed: false, dependencies: ['M0202', 'M0205'] },
-    { id: 'M0211', title: 'Análisis Funcional', year: 4, completed: false, dependencies: ['M0201', 'M0206', 'M0208'] },
-    { id: 'OPT-4.1', title: 'Materia Optativa 1', year: 4, completed: false, dependencies: [] },
-    { id: 'OPT-4.2', title: 'Materia Optativa 2', year: 4, completed: false, dependencies: [] },
-    { id: 'M0213', title: 'Ecuaciones Diferenciales', year: 5, completed: false, dependencies: ['M0211'] },
-    { id: 'OPT-5.1', title: 'Materia Optativa 3', year: 5, completed: false, dependencies: [] },
-    { id: 'OPT-5.2', title: 'Materia Optativa 4', year: 5, completed: false, dependencies: [] },
-    { id: 'M0216', title: 'Trabajo Iniciación a Inv.', year: 5, completed: false, dependencies: ['M0213'] }
-  ],
-  "Lic. en Física Médica": [
-    { id: 'E0204', title: 'Física General I', year: 1, completed: false, dependencies: [] },
-    { id: 'E0205', title: 'Física Experimental I', year: 1, completed: false, dependencies: [] },
-    { id: 'D0101', title: 'Álgebra', year: 1, completed: false, dependencies: [] },
-    { id: 'D0102', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'E0206', title: 'Física General II', year: 1, completed: false, dependencies: ['D0101', 'D0102', 'E0204', 'E0205'] },
-    { id: 'E0207', title: 'Física Experimental II', year: 1, completed: false, dependencies: ['D0101', 'D0102', 'E0204', 'E0205'] },
-    { id: 'D0103', title: 'Análisis Matemático II', year: 1, completed: false, dependencies: ['D0101', 'D0102'] },
-    { id: 'D0201', title: 'Química I', year: 1, completed: false, dependencies: ['D0101', 'D0102'] },
-    { id: 'A0208', title: 'Biología', year: 2, completed: false, dependencies: ['D0201'] },
-    { id: 'E0208', title: 'Física General III', year: 2, completed: false, dependencies: ['E0206', 'E0207'] },
-    { id: 'E0209', title: 'Física Experimental III', year: 2, completed: false, dependencies: ['E0206', 'E0207'] },
-    { id: 'D0203', title: 'Electromagnetismo', year: 2, completed: false, dependencies: ['E0208', 'E0209', 'D0103'] },
-    { id: 'D0202', title: 'Química II', year: 2, completed: false, dependencies: ['D0201'] },
-    { id: 'D0204', title: 'Computación', year: 2, completed: false, dependencies: ['D0103', 'E0208'] },
-    { id: 'D0205', title: 'Matemáticas Especiales', year: 2, completed: false, dependencies: ['D0103'] },
-    { id: 'D0206', title: 'Química III', year: 2, completed: false, dependencies: ['A0208', 'D0202'] },
-    { id: 'U0201', title: 'Anatomía e Histología', year: 3, completed: false, dependencies: ['A0208'] },
-    { id: 'D0207', title: 'Física Cuántica', year: 3, completed: false, dependencies: ['D0203'] },
-    { id: 'D0208', title: 'Prob. y Estadística', year: 3, completed: false, dependencies: ['D0204'] },
-    { id: 'D0209', title: 'Electrónica', year: 3, completed: false, dependencies: ['D0205', 'E0208'] },
-    { id: 'U0203', title: 'Fisiología', year: 3, completed: false, dependencies: ['U0201'] },
-    { id: 'D0212', title: 'El Núcleo y Radiaciones', year: 3, completed: false, dependencies: ['D0207'] },
-    { id: 'D0210', title: 'Física Estadística', year: 3, completed: false, dependencies: ['D0203', 'D0205', 'D0208'] },
-    { id: 'D0213', title: 'Analísis de Señales', year: 3, completed: false, dependencies: ['D0205', 'D0208'] },
-    { id: 'D0215', title: 'Física de la Salud', year: 4, completed: false, dependencies: ['D0212'] },
-    { id: 'D0214', title: 'Biofísica', year: 4, completed: false, dependencies: ['D0206', 'D0210', 'U0203'] },
-    { id: 'D0217', title: 'Física de la Radioterapia', year: 4, completed: false, dependencies: ['D0212'] },
-    { id: 'D0216', title: 'Radiobiología y Dosimetría', year: 4, completed: false, dependencies: ['U0203', 'D0212'] },
-    { id: 'D0218', title: 'Laboratorio en Física de la Radiación', year: 4, completed: false, dependencies: ['D0212'] },
-    { id: 'D0221', title: 'Fundamentos del Laser', year: 4, completed: false, dependencies: ['D0207', 'D0210'] },
-    { id: 'D0220', title: 'Física de la Med. Nuclear', year: 4, completed: false, dependencies: ['D0215', 'D0216'] },
-    { id: 'D0219', title: 'Técnicas del Radioanálisis', year: 4, completed: false, dependencies: ['D0206', 'D0212'] },
-    { id: 'D0222', title: 'Física Imágenes Médicas', year: 4, completed: false, dependencies: ['D0213', 'U0203'] },
-    { id: 'D0225', title: 'Lab. en Medicina Nuclear', year: 4, completed: false, dependencies: ['D0215', 'D0216'] },
-    { id: 'D0226', title: 'Lab. en Imágenes Médicas', year: 4, completed: false, dependencies: ['U0203', 'D0213'] },
-    { id: 'OPT-5.1', title: 'Materia Optativa 1', year: 5, completed: false, dependencies: [] },
-    { id: 'OPT-5.2', title: 'Materia Optativa 2', year: 5, completed: false, dependencies: [] },
-    { id: 'D0224', title: 'Trabajo de Diploma', year: 5, completed: false, dependencies: ['D0214', 'D0215', 'D0216', 'D0217', 'D0218', 'D0219', 'D0220', 'D0221', 'D0222'] }
-  ],
-  "Lic. en Bioquímica": [
-    { id: 'A0201', title: 'Álgebra', year: 1, completed: false, dependencies: [] },
-    { id: 'A0202', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'A0203', title: 'Introducción a la Química', year: 1, completed: false, dependencies: [] },
-    { id: 'A0204', title: 'Física I', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0205', title: 'Análisis Matemático II', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0206', title: 'Química General', year: 1, completed: false, dependencies: ['A0201', 'A0202', 'A0203'] },
-    { id: 'A0207', title: 'Física II', year: 2, completed: false, dependencies: ['A0204', 'A0205'] },
-    { id: 'A0208', title: 'Biología', year: 2, completed: false, dependencies: ['A0203'] },
-    { id: 'A0209', title: 'Química Inorgánica', year: 2, completed: false, dependencies: ['A0206'] },
-    { id: 'A0210', title: 'Análisis de Datos', year: 2, completed: false, dependencies: ['A0205', 'A0206'] },
-    { id: 'A0211', title: 'Fisicoquímica', year: 2, completed: false, dependencies: ['A0207', 'A0209', 'A0210'] },
-    { id: 'A0212', title: 'Química Orgánica I', year: 2, completed: false, dependencies: ['A0209'] },
-    { id: 'A0213', title: 'Química Analítica', year: 2, completed: false, dependencies: ['A0209', 'A0210'] },
-    { id: 'U0206', title: 'Bioquímica I', year: 3, completed: false, dependencies: ['A0208', 'A0211', 'A0212', 'A0213'] },
-    { id: 'U0212', title: 'Química Orgánica II', year: 3, completed: false, dependencies: ['A0212'] },
-    { id: 'U0213', title: 'Química Analítica Instrumental', year: 3, completed: false, dependencies: ['A0213'] },
-    { id: 'U0211', title: 'Ingles Técnico', year: 3, completed: false, dependencies: ['A0213', 'A0212', 'A0211'] },
-    { id: 'U0201', title: 'Anatomía e Histología', year: 3, completed: false, dependencies: ['A0208'] },
-    { id: 'U0207', title: 'Bioquímica II', year: 3, completed: false, dependencies: ['U0206', 'U0212'] },
-    { id: 'U0208', title: 'Biofisicoquímica', year: 3, completed: false, dependencies: ['U0206', 'U0213'] },
-    { id: 'U0203', title: 'Fisiología', year: 4, completed: false, dependencies: ['U0201'] },
-    { id: 'U0205', title: 'Diseño de Experimentos', year: 4, completed: false, dependencies: ['U0206', 'U0213'] },
-    { id: 'U0209', title: 'Bioquímica III', year: 4, completed: false, dependencies: ['U0206'] },
-    { id: 'U0204', title: 'Microbiología General', year: 4, completed: false, dependencies: ['U0209'] },
-    { id: 'B0203', title: 'Toxicología', year: 4, completed: false, dependencies: ['U0203', 'U0207'] },
-    { id: 'B0204', title: 'Elementos de Farmacología', year: 4, completed: false, dependencies: ['U0203'] },
-    { id: 'B0205', title: 'Hematología', year: 5, completed: false, dependencies: ['U0203', 'U0209'] },
-    { id: 'B0206', title: 'Inmunología', year: 5, completed: false, dependencies: ['U0203', 'U0204', 'U0209'] },
-    { id: 'B0207', title: 'Microbiología Clínica', year: 5, completed: false, dependencies: ['U0204'] },
-    { id: 'B0208', title: 'Medio Interno', year: 5, completed: false, dependencies: ['B0205'] },
-    { id: 'B0209', title: 'Micología', year: 5, completed: false, dependencies: ['U0204', 'B0206'] },
-    { id: 'B0210', title: 'Química Clínica', year: 5, completed: false, dependencies: ['B0205'] },
-    { id: 'B0211', title: 'Bromatología', year: 5, completed: false, dependencies: ['U0204'] },
-    { id: 'B0212', title: 'Endocrinología', year: 6, completed: false, dependencies: ['B0210'] },
-    { id: 'B0213', title: 'Bioquímica Patológica', year: 6, completed: false, dependencies: ['U0203', 'U0209'] },
-    { id: 'B0214', title: 'Parasitología', year: 6, completed: false, dependencies: ['B0205'] },  
-    { id: 'O0220', title: 'Virología Clínica', year: 6, completed: false, dependencies: ['U0204', 'B0206'] },
-    { id: 'B0215', title: 'Medicina Interna', year: 6, completed: false, dependencies: ['B0212', 'B0213', 'B0214'] },
-    { id: 'OPT-6.1', title: 'Materia Optativa 1', year: 6, completed: false, dependencies: [] },
-    { id: 'OPT-6.2', title: 'Materia Optativa 2', year: 6, completed: false, dependencies: [] },
-    { id: 'B0216', title: 'Prácticas de Laboratorio', year: 6, completed: false, dependencies: ['B0212', 'B0213', 'B0214'] }
-  ],
-  "Farmacia": [
-    { id: 'A0201', title: 'Álgebra', year: 1, completed: false, dependencies: [] },
-    { id: 'A0202', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'A0203', title: 'Introducción a la Química', year: 1, completed: false, dependencies: [] },
-    { id: 'A0204', title: 'Física I', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0205', title: 'Análisis Matemático II', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0206', title: 'Química General', year: 1, completed: false, dependencies: ['A0201', 'A0202', 'A0203'] },
-    { id: 'AEFI', title: 'Ámbitos del Ej. Farmacéutico', year: 1, completed: false, dependencies: [] },
-    { id: 'A0207', title: 'Física II', year: 2, completed: false, dependencies: ['A0204', 'A0205'] },
-    { id: 'A0208', title: 'Biología', year: 2, completed: false, dependencies: ['A0203'] },
-    { id: 'A0209', title: 'Química Inorgánica', year: 2, completed: false, dependencies: ['A0206'] },
-    { id: 'A0210', title: 'Análisis de Datos', year: 2, completed: false, dependencies: ['A0205', 'A0206'] },
-    { id: 'A0211', title: 'Fisicoquímica', year: 2, completed: false, dependencies: ['A0207', 'A0209', 'A0210'] },
-    { id: 'A0212', title: 'Química Orgánica I', year: 2, completed: false, dependencies: ['A0209'] },
-    { id: 'A0213', title: 'Química Analítica', year: 2, completed: false, dependencies: ['A0209', 'A0210'] },
-    { id: 'AEFII', title: 'Ámbitos del Ej. Farmacéutico II', year: 2, completed: false, dependencies: ['AEFI'] },
-    { id: 'U0211', title: 'Ingles Técnico', year: 2, completed: false, dependencies: ['A0207', 'A0208', 'A0209', 'A0210'] },
-    { id: 'U0212', title: 'Química Organica II', year: 3, completed: false, dependencies: ['A0212'] },
-    { id: 'U0213', title: 'Química Analítica Instrumental', year: 3, completed: false, dependencies: ['A0213'] },
-    { id: 'U0201', title: 'Anatomía e Histología', year: 3, completed: false, dependencies: ['A0208'] },
-    { id: 'F0201', title: 'Farmacobotánica', year: 3, completed: false, dependencies: ['A0208', 'A0212'] },
-    { id: 'F0202', title: 'Farmacognosia', year: 3, completed: false, dependencies: ['U0212', 'U0213', 'F0201'] },
-    { id: 'U0202', title: 'Química Biológica', year: 3, completed: false, dependencies: ['A0208', 'A0212'] },
-    { id: 'F0216', title: 'Fisiología', year: 3, completed: false, dependencies: ['U0201'] },
-    { id: 'AEFIII', title: 'Ámbitos del Ej. Farmacéutico III', year: 3, completed: false, dependencies: ['AEFII'] },
-    { id: 'U0205', title: 'Diseño de Experimentos', year: 3, completed: false, dependencies: ['A0213'] },    
-    { id: 'F0203', title: 'Fisiopatología', year: 4, completed: false, dependencies: ['F0216', 'U0202'] },
-    { id: 'U0204', title: 'Microbiología General', year: 4, completed: false, dependencies: ['U0202'] },
-    { id: 'F0204', title: 'Biofarmacia y Farmacocinética', year: 4, completed: false, dependencies: ['F0216', 'U0205'] },
-    { id: 'F0205', title: 'Farmacología I', year: 4, completed: false, dependencies: ['F0203', 'F0204'] },
-    { id: 'F0207', title: 'Tecnología Farmacéutica I', year: 4, completed: false, dependencies: ['A0211', 'F0204'] },
-    { id: 'F0206', title: 'Nutricion y Bromatología', year: 4, completed: false, dependencies: ['F0216', 'U0202'] },
-    { id: 'F0230', title: 'Inmunologia General y Aplicada', year: 4, completed: false, dependencies: ['F0216', 'U0204'] },
-    { id: 'F0213', title: 'Control de Calidad de Med.', year: 5, completed: false, dependencies: ['U0205', 'U0212', 'U0213', 'F0207'] },
-    { id: 'F0231', title: 'Biotecnología Farmacéutica', year: 5, completed: false, dependencies: ['U0204', 'F0207'] },
-    { id: 'F0209', title: 'Higiene y Salúd Pública', year: 5, completed: false, dependencies: ['F0203', 'U0204'] },
-    { id: 'F0208', title: 'Farmacología II', year: 5, completed: false, dependencies: ['U0204', 'F0205'] },
-    { id: 'F0210', title: 'Química Medicinal', year: 5, completed: false, dependencies: ['A0211', 'F0202', 'F0205'] },
-    { id: 'F0214', title: 'Farmacia Clínica y Asistencial', year: 5, completed: false, dependencies: ['F0204', 'F0208'] },
-    { id: 'F0211', title: 'Eco. y Legis. Farmacéutica', year: 6, completed: false, dependencies: ['F0205', 'F0207'] },
-    { id: 'TOX', title: 'Toxicología Farmacéutica', year: 6, completed: false, dependencies: ['F0205', 'F0208'] },
-    { id: 'OPT-6.1', title: 'Materia Optativa 1', year: 6, completed: false, dependencies: [] },
-    { id: 'OPT-6.2', title: 'Materia Optativa 2', year: 6, completed: false, dependencies: [] },
-    { id: 'F0215', title: 'Práctica Farmacéutica', year: 6, completed: false, dependencies: ['F0209', 'F0212', 'F0213', 'F0214'] }
-  ],
-  "Lic. en Biotecnología": [
-    { id: 'A0201', title: 'Álgebra', year: 1, completed: false, dependencies: [] },
-    { id: 'A0202', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'A0203', title: 'Introducción a la Química', year: 1, completed: false, dependencies: [] },
-    { id: 'A0204', title: 'Física I', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0205', title: 'Análisis Matemático II', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0206', title: 'Química General', year: 1, completed: false, dependencies: ['A0201', 'A0202', 'A0203'] },
-    { id: 'A0207', title: 'Física II', year: 2, completed: false, dependencies: ['A0204', 'A0205'] },
-    { id: 'A0208', title: 'Biología', year: 2, completed: false, dependencies: ['A0203'] },
-    { id: 'A0209', title: 'Química Inorgánica', year: 2, completed: false, dependencies: ['A0206'] },
-    { id: 'A0210', title: 'Análisis de Datos', year: 2, completed: false, dependencies: ['A0205', 'A0206'] },
-    { id: 'A0211', title: 'Fisicoquímica', year: 2, completed: false, dependencies: ['A0207', 'A0209', 'A0210'] },
-    { id: 'A0212', title: 'Química Orgánica I', year: 2, completed: false, dependencies: ['A0209'] },
-    { id: 'A0213', title: 'Química Analítica', year: 2, completed: false, dependencies: ['A0209', 'A0210'] },
-    { id: 'U0206', title: 'Bioquímica I', year: 3, completed: false, dependencies: ['A0208', 'A0212', 'A0213'] },
-    { id: 'U0212', title: 'Química Orgánica II', year: 3, completed: false, dependencies: ['A0212'] },
-    { id: 'U0204', title: 'Microbiología General', year: 3, completed: false, dependencies: ['U0206'] },
-    { id: 'U0213', title: 'Química Analítica Instrumental', year: 3, completed: false, dependencies: ['A0210', 'A0213'] },
-    { id: 'U0210', title: 'Fenómenos de Transporte', year: 3, completed: false, dependencies: ['A0211'] },
-    { id: 'U0207', title: 'Bioquímica II', year: 3, completed: false, dependencies: ['U0206', 'U0212'] },
-    { id: 'U0208', title: 'Biofisicoquímica', year: 4, completed: false, dependencies: ['U0206', 'U0213'] },
-    { id: 'U0209', title: 'Bioquímica III', year: 4, completed: false, dependencies: ['U0206'] },
-    { id: 'T0202', title: 'Fisiología Animal', year: 4, completed: false, dependencies: ['U0207'] },
-    { id: 'T0205', title: 'Biología Vegetal', year: 4, completed: false, dependencies: ['U0207'] },
-    { id: 'T0203', title: 'Biología Celular Molecular', year: 4, completed: false, dependencies: ['U0207'] },
-    { id: 'T0204', title: 'Ingeniería Genética', year: 4, completed: false, dependencies: ['U0207', 'U0209'] },
-    { id: 'T0206', title: 'Biotecnología', year: 4, completed: false, dependencies: ['U0204', 'U0207'] },
-    { id: 'T0207', title: 'Biotecnología II', year: 5, completed: false, dependencies: ['U0210', 'T0206'] },
-    { id: 'T0208', title: 'Biotec. de Org. Superiores', year: 5, completed: false, dependencies: ['T0202', 'T0204', 'T0205'] },
-    { id: 'T0209', title: 'Ingeniería Metabólica', year: 5, completed: false, dependencies: ['U0209', 'T0206'] },
-    { id: 'T0210', title: 'Bioética y Bioseguridad', year: 5, completed: false, dependencies: ['U0209', 'U0204'] },
-    { id: 'OPT-5.1', title: 'Materia Optativa 1', year: 5, completed: false, dependencies: [] },
-    { id: 'OPT-5.2', title: 'Materia Optativa 2', year: 5, completed: false, dependencies: [] },
-    { id: 'T0211', title: 'Laboratorio de Procesos Biotec.', year: 5, completed: false, dependencies: ['T0202', 'T0203', 'T0204', 'T0206'] }
-  ],
-  "Lic. en Química": [
-    { id: 'A0201', title: 'Álgebra, C. Numérico y Geometría Anal.', year: 1, completed: false, dependencies: [] },
-    { id: 'A0202', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'A0203', title: 'Introducción a la Química', year: 1, completed: false, dependencies: [] },
-    { id: 'A0204', title: 'Física I', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0205', title: 'Análisis Matemático II', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0206', title: 'Química General', year: 1, completed: false, dependencies: ['A0201', 'A0202', 'A0203'] },
-    { id: 'A0207', title: 'Física II', year: 2, completed: false, dependencies: ['A0204', 'A0205'] },
-    { id: 'A0208', title: 'Biología', year: 2, completed: false, dependencies: ['A0203'] },
-    { id: 'A0209', title: 'Química Inorgánica', year: 2, completed: false, dependencies: ['A0206'] },
-    { id: 'A0210', title: 'Análisis de Datos', year: 2, completed: false, dependencies: ['A0205', 'A0206'] },
-    { id: 'A0211', title: 'Fisicoquímica', year: 2, completed: false, dependencies: ['A0207', 'A0209', 'A0210'] },
-    { id: 'A0212', title: 'Química Orgánica I', year: 2, completed: false, dependencies: ['A0209'] },
-    { id: 'A0213', title: 'Química Analítica', year: 2, completed: false, dependencies: ['A0209', 'A0210'] },
-    { id: 'U0211', title: 'Inglés Científico Técnico', year: 3, completed: false, dependencies: ['A0211', 'A0212', 'A0213'] },
-    { id: 'C0208', title: 'Introducción a la Microbiología', year: 3, completed: false, dependencies: ['A0208'] },
-    { id: 'Q0201', title: 'Química Orgánica II', year: 3, completed: false, dependencies: ['A0212'] },
-    { id: 'Q0202', title: 'Fisicoquímica II', year: 3, completed: false, dependencies: ['A0211'] },
-    { id: 'Q0203', title: 'Química Analítica II', year: 3, completed: false, dependencies: ['A0207', 'A0213'] },
-    { id: 'Q0205', title: 'Química Orgánica III', year: 3, completed: false, dependencies: ['Q0201'] },
-    { id: 'Q0206', title: 'Fisicoquímica III', year: 3, completed: false, dependencies: ['Q0202'] },
-    { id: 'Q0207', title: 'Química Analítica III', year: 3, completed: false, dependencies: ['Q0203'] },
-    { id: 'Q0302', title: 'Higiene y Seguridad Laboral', year: 3, completed: false, dependencies: [] },
-    { id: 'C0210', title: 'Toxicología General', year: 4, completed: false, dependencies: ['A0213'] },
-    { id: 'Q0208', title: 'Determinación de Estructuras', year: 4, completed: false, dependencies: ['Q0205'] },
-    { id: 'Q0209', title: 'Química Inorgánica II', year: 4, completed: false, dependencies: ['A0209', 'Q0202'] },
-    { id: 'Q0210', title: 'Introducción a la Química Biológica', year: 4, completed: false, dependencies: ['A0208', 'Q0205'] },
-    { id: 'Q0303', title: 'Química Industrial y de Materiales', year: 4, completed: false, dependencies: ['A0211'] },
-    { id: 'Q0232', title: 'Análisis Orgánico', year: 4, completed: false, dependencies: ['Q0208'] },
-    { id: 'Q0233', title: 'Mecanismos de Reacción en Q.O.', year: 4, completed: false, dependencies: ['Q0208'] },
-    { id: 'Q0234', title: 'Trabajos Experimentales en Q.O. I', year: 4, completed: false, dependencies: ['Q0208'] },
-    { id: 'Q0304', title: 'Química Ambiental', year: 4, completed: false, dependencies: ['A0208', 'A0213'] },
-    { id: 'Q0235', title: 'Q.O. de Productos Naturales', year: 5, completed: false, dependencies: ['Q0208'] },
-    { id: 'Q0236', title: 'Síntesis Orgánica I', year: 5, completed: false, dependencies: ['Q0233'] },
-    { id: 'Q0237', title: 'Trabajos Experimentales en Q.O. II', year: 5, completed: false, dependencies: ['Q0232', 'Q0234'] },
-    { id: 'Q0301', title: 'Bromatología', year: 5, completed: false, dependencies: ['A0208', 'Q0207'] },
-    { id: 'Q0238', title: 'Síntesis Orgánica II', year: 5, completed: false, dependencies: ['Q0236'] },
-    { id: 'OPT-5.1', title: 'Materia Optativa 1', year: 5, completed: false, dependencies: [] },
-    { id: 'OPT-5.2', title: 'Materia Optativa 2', year: 5, completed: false, dependencies: [] },
-    { id: 'Q0309', title: 'Trabajo Final', year: 5, completed: false, dependencies: [] }
-  ],
-  "Óptica Ocular y Optometría": [
-    { id: 'A0201', title: 'Álgebra, C. Numérico y Geometría Anal.', year: 1, completed: false, dependencies: [] },
-    { id: 'A0202', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'A0203', title: 'Introducción a la Química', year: 1, completed: false, dependencies: [] },
-    { id: 'A0204', title: 'Física I', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0205', title: 'Análisis Matemático II', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0206', title: 'Química General', year: 1, completed: false, dependencies: ['A0201', 'A0202', 'A0203'] },
-    { id: 'A0207', title: 'Física II', year: 2, completed: false, dependencies: ['A0204', 'A0205'] },
-    { id: 'A0208', title: 'Biología', year: 2, completed: false, dependencies: ['A0203'] },
-    { id: 'P0201', title: 'Óptica Oftálmica I', year: 2, completed: false, dependencies: ['A0204', 'A0206'] },
-    { id: 'U0201', title: 'Anatomía e Histología', year: 2, completed: false, dependencies: ['A0208'] },
-    { id: 'P0202', title: 'Óptica Oftálmica II', year: 2, completed: false, dependencies: ['A0207', 'P0201'] },
-    { id: 'P0220', title: 'Química Orgánica', year: 2, completed: false, dependencies: ['A0206'] },
-    { id: 'A0210', title: 'Análisis de Datos', year: 3, completed: false, dependencies: ['A0205', 'A0206'] },
-    { id: 'U0214', title: 'Física III', year: 3, completed: false, dependencies: ['A0207'] },
-    { id: 'P0221', title: 'Química Orgánica II', year: 3, completed: false, dependencies: ['P0220'] },
-    { id: 'P0222', title: 'Microbiología General', year: 3, completed: false, dependencies: ['A0208'] },
-    { id: 'U0203', title: 'Fisiología', year: 3, completed: false, dependencies: ['U0201', 'P0222'] },
-    { id: 'P0203', title: 'Seminario de Legisl., Admin. y Marketing', year: 3, completed: false, dependencies: ['A0210'] },
-    { id: 'P0204', title: 'Química Biológica', year: 3, completed: false, dependencies: ['P0221', 'P0222'] },
-    { id: 'P0205', title: 'Óptica Instrumental', year: 3, completed: false, dependencies: ['A0205', 'A0210', 'P0202'] },
-    { id: 'P0206', title: 'Contactología', year: 4, completed: false, dependencies: ['U0203', 'P0202', 'P0204'] },
-    { id: 'P0207', title: 'Fisiopatología Ocular', year: 4, completed: false, dependencies: ['U0203', 'P0222'] },
-    { id: 'P0208', title: 'Optometría I', year: 4, completed: false, dependencies: ['U0203', 'P0204'] },
-    { id: 'P0209', title: 'Farmacología', year: 4, completed: false, dependencies: ['P0208'] },
-    { id: 'P0210', title: 'Higiene y Salud Pública', year: 4, completed: false, dependencies: ['P0204', 'P0222'] },
-    { id: 'P0211', title: 'Contactología II', year: 4, completed: false, dependencies: ['P0206'] },
-    { id: 'P0212', title: 'Optometría II', year: 5, completed: false, dependencies: ['P0208', 'P0209'] },
-    { id: 'P0213', title: 'Optometría Pediátrica y Geriátrica', year: 5, completed: false, dependencies: ['P0208'] },
-    { id: 'P0214', title: 'Ortóptica I', year: 5, completed: false, dependencies: ['P0208'] },
-    { id: 'P0215', title: 'Optometría Clínica I', year: 5, completed: false, dependencies: ['P0207', 'P0208'] },
-    { id: 'P0216', title: 'Optometría Clínica II', year: 5, completed: false, dependencies: ['P0215'] },
-    { id: 'P0217', title: 'Baja Visión', year: 5, completed: false, dependencies: ['P0205', 'P0207', 'P0212'] },
-    { id: 'P0218', title: 'Prótesis Ocular', year: 5, completed: false, dependencies: ['P0207'] },
-    { id: 'P0219', title: 'Ortóptica II', year: 5, completed: false, dependencies: ['P0214'] }
-  ],
-  "Tec. Univ. en Química": [
-    { id: 'A0201', title: 'Álgebra, C. Numérico y Geometría Anal.', year: 1, completed: false, dependencies: [] },
-    { id: 'A0202', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'A0203', title: 'Introducción a la Química', year: 1, completed: false, dependencies: [] },
-    { id: 'A0204', title: 'Física I', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0205', title: 'Análisis Matemático II', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0206', title: 'Química General', year: 1, completed: false, dependencies: ['A0201', 'A0202', 'A0203'] },
-    { id: 'A0207', title: 'Física II', year: 2, completed: false, dependencies: ['A0204', 'A0205'] },
-    { id: 'A0208', title: 'Biología', year: 2, completed: false, dependencies: ['A0203'] },
-    { id: 'A0209', title: 'Química Inorgánica', year: 2, completed: false, dependencies: ['A0206'] },
-    { id: 'A0210', title: 'Análisis de Datos', year: 2, completed: false, dependencies: ['A0205', 'A0206'] },
-    { id: 'A0212', title: 'Química Orgánica I', year: 2, completed: false, dependencies: ['A0209'] },
-    { id: 'A0213', title: 'Química Analítica', year: 2, completed: false, dependencies: ['A0209', 'A0210'] },
-    { id: 'N0102', title: 'Microbiología General', year: 2, completed: false, dependencies: ['A0208'] },
-    { id: 'U0212', title: 'Química Orgánica II', year: 3, completed: false, dependencies: ['A0212'] },
-    { id: 'U0213', title: 'Química Analítica Instrumental', year: 3, completed: false, dependencies: ['A0210', 'A0213'] },
-    { id: 'N0103', title: 'Introducción a la Química Biológica', year: 3, completed: false, dependencies: ['A0208', 'A0212', 'A0213'] }
-  ],
-  "Lic. en Cs. de Alimentos": [
-    { id: 'A0201', title: 'Álgebra, C. Numérico y Geometría Anal.', year: 1, completed: false, dependencies: [] },
-    { id: 'A0202', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'A0203', title: 'Introducción a la Química', year: 1, completed: false, dependencies: [] },
-    { id: 'A0204', title: 'Física I', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0205', title: 'Análisis Matemático II', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0206', title: 'Química General', year: 1, completed: false, dependencies: ['A0201', 'A0202', 'A0203'] },
-    { id: 'A0207', title: 'Física II', year: 2, completed: false, dependencies: ['A0204', 'A0205'] },
-    { id: 'A0208', title: 'Biología', year: 2, completed: false, dependencies: ['A0203'] },
-    { id: 'A0209', title: 'Química Inorgánica', year: 2, completed: false, dependencies: ['A0206'] },
-    { id: 'A0210', title: 'Análisis de Datos', year: 2, completed: false, dependencies: ['A0205', 'A0206'] },
-    { id: 'A0211', title: 'Fisicoquímica', year: 2, completed: false, dependencies: ['A0207', 'A0209', 'A0210'] },
-    { id: 'A0212', title: 'Química Orgánica I', year: 2, completed: false, dependencies: ['A0209'] },
-    { id: 'A0213', title: 'Química Analítica', year: 2, completed: false, dependencies: ['A0209', 'A0210'] },
-    { id: 'U0206', title: 'Bioquímica I', year: 3, completed: false, dependencies: ['A0208', 'A0212', 'A0213'] },
-    { id: 'U0212', title: 'Química Orgánica II', year: 3, completed: false, dependencies: ['A0212'] },
-    { id: 'U0213', title: 'Química Analítica Instrumental', year: 3, completed: false, dependencies: ['A0213'] },
-    { id: 'U0204', title: 'Microbiología General', year: 3, completed: false, dependencies: ['A0208', 'U0206'] },
-    { id: 'L0201', title: 'Bioquímica II', year: 3, completed: false, dependencies: ['U0206'] },
-    { id: 'U0210', title: 'Fenómenos de Transporte', year: 3, completed: false, dependencies: ['A0211'] },
-    { id: 'U0205', title: 'Diseño de Experimentos', year: 4, completed: false, dependencies: ['A0210', 'A0211', 'U0213'] },
-    { id: 'L0202', title: 'Prop. Físicas y Químicas de Alimentos I', year: 4, completed: false, dependencies: ['U0210', 'U0212'] },
-    { id: 'L0203', title: 'Operaciones y Procesos de Separación', year: 4, completed: false, dependencies: ['A0211', 'U0210'] },
-    { id: 'L0204', title: 'Alimentos y Salud', year: 4, completed: false, dependencies: ['U0206'] },
-    { id: 'L0205', title: 'Prop. Físicas y Químicas de Alimentos II', year: 4, completed: false, dependencies: ['L0202'] },
-    { id: 'L0206', title: 'Procesamiento de Alimentos I', year: 4, completed: false, dependencies: ['L0202', 'L0203'] },
-    { id: 'L0207', title: 'Análisis de Alimentos', year: 4, completed: false, dependencies: ['U0213', 'L0202'] },
-    { id: 'L0208', title: 'Microbiología de Alimentos', year: 4, completed: false, dependencies: ['U0204', 'L0201'] },
-    { id: 'L0209', title: 'Procesamiento de Alimentos II', year: 5, completed: false, dependencies: ['L0206'] },
-    { id: 'L0210', title: 'Calidad e Higiene de Alimentos', year: 5, completed: false, dependencies: ['L0205', 'L0206', 'L0207'] },
-    { id: 'L0211', title: 'Eval. Económica y Planeamiento Ind.', year: 5, completed: false, dependencies: ['L0206'] },
-    { id: 'L0212', title: 'Bioindustrias Alimentarias', year: 5, completed: false, dependencies: ['L0206', 'L0208'] },
-    { id: 'OPT-5.1', title: 'Materia Optativa 1', year: 5, completed: false, dependencies: [] },
-    { id: 'L0214', title: 'Toxicología de Alimentos', year: 5, completed: false, dependencies: ['L0201', 'L0204', 'L0205'] },
-    { id: 'L0215', title: 'Industrias Alimentarias', year: 5, completed: false, dependencies: ['L0207', 'L0209'] },
-    { id: 'L0216', title: 'Trabajo Final', year: 5, completed: false, dependencies: [] }
-  ],
-  "Tec. Univ. en Alimentos": [
-    { id: 'A0201', title: 'Álgebra, C. Numérico y Geometría Anal.', year: 1, completed: false, dependencies: [] },
-    { id: 'A0202', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'A0203', title: 'Introducción a la Química', year: 1, completed: false, dependencies: [] },
-    { id: 'A0204', title: 'Física I', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0205', title: 'Análisis Matemático II', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0206', title: 'Química General', year: 1, completed: false, dependencies: ['A0201', 'A0202', 'A0203'] },
-    { id: 'A0207', title: 'Física II', year: 2, completed: false, dependencies: ['A0204', 'A0205'] },
-    { id: 'A0208', title: 'Biología', year: 2, completed: false, dependencies: ['A0203'] },
-    { id: 'A0209', title: 'Química Inorgánica', year: 2, completed: false, dependencies: ['A0206'] },
-    { id: 'A0210', title: 'Análisis de Datos', year: 2, completed: false, dependencies: ['A0205', 'A0206'] },
-    { id: 'A0211', title: 'Fisicoquímica', year: 2, completed: false, dependencies: ['A0207', 'A0209', 'A0210'] },
-    { id: 'A0212', title: 'Química Orgánica I', year: 2, completed: false, dependencies: ['A0209'] },
-    { id: 'A0213', title: 'Química Analítica', year: 2, completed: false, dependencies: ['A0209', 'A0210'] },
-    { id: 'U0206', title: 'Bioquímica I', year: 3, completed: false, dependencies: ['A0208', 'A0212', 'A0213'] },
-    { id: 'U0212', title: 'Química Orgánica II', year: 3, completed: false, dependencies: ['A0212'] },
-    { id: 'U0213', title: 'Química Analítica Instrumental', year: 3, completed: false, dependencies: ['A0213'] },
-    { id: 'U0204', title: 'Microbiología General', year: 3, completed: false, dependencies: ['A0208', 'U0206'] },
-    { id: 'L0201', title: 'Bioquímica II', year: 3, completed: false, dependencies: ['U0206'] },
-    { id: 'U0210', title: 'Fenómenos de Transporte', year: 3, completed: false, dependencies: ['A0211'] },
-    { id: 'U0205', title: 'Diseño de Experimentos', year: 4, completed: false, dependencies: ['A0210', 'A0211', 'U0213'] },
-    { id: 'L0202', title: 'Prop. Físicas y Químicas de Alimentos I', year: 4, completed: false, dependencies: ['U0210', 'U0212'] },
-    { id: 'L0203', title: 'Op. y Procesos de Separación', year: 4, completed: false, dependencies: ['A0211', 'U0210'] },
-    { id: 'L0204', title: 'Alimentos y Salud', year: 4, completed: false, dependencies: ['U0206'] },
-    { id: 'L0205', title: 'Prop. Físicas y Químicas de Alimentos II', year: 4, completed: false, dependencies: ['L0202'] },
-    { id: 'L0206', title: 'Procesamiento de Alimentos I', year: 4, completed: false, dependencies: ['L0202', 'L0203'] },
-    { id: 'L0207', title: 'Análisis de Alimentos', year: 4, completed: false, dependencies: ['U0213', 'L0202'] },
-    { id: 'L0208', title: 'Microbiología de Alimentos', year: 4, completed: false, dependencies: ['U0204', 'L0201'] }
-  ],
-  "Química y Tec. Ambiental": [
-    { id: 'A0201', title: 'Álgebra, C. Numérico y Geometría Anal.', year: 1, completed: false, dependencies: [] },
-    { id: 'A0202', title: 'Análisis Matemático I', year: 1, completed: false, dependencies: [] },
-    { id: 'A0203', title: 'Introducción a la Química', year: 1, completed: false, dependencies: [] },
-    { id: 'A0204', title: 'Física I', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0205', title: 'Análisis Matemático II', year: 1, completed: false, dependencies: ['A0201', 'A0202'] },
-    { id: 'A0206', title: 'Química General', year: 1, completed: false, dependencies: ['A0201', 'A0202', 'A0203'] },
-    { id: 'A0207', title: 'Física II', year: 2, completed: false, dependencies: ['A0204', 'A0205'] },
-    { id: 'A0208', title: 'Biología', year: 2, completed: false, dependencies: ['A0203'] },
-    { id: 'A0209', title: 'Química Inorgánica', year: 2, completed: false, dependencies: ['A0206'] },
-    { id: 'A0210', title: 'Análisis de Datos', year: 2, completed: false, dependencies: ['A0205', 'A0206'] },
-    { id: 'A0211', title: 'Fisicoquímica', year: 2, completed: false, dependencies: ['A0207', 'A0209', 'A0210'] },
-    { id: 'A0212', title: 'Química Orgánica I', year: 2, completed: false, dependencies: ['A0209'] },
-    { id: 'A0213', title: 'Química Analítica', year: 2, completed: false, dependencies: ['A0209', 'A0210'] },
-    { id: 'U0211', title: 'Inglés Científico Técnico', year: 3, completed: false, dependencies: ['A0211', 'A0212', 'A0213'] },
-    { id: 'C0201', title: 'Química Orgánica II', year: 3, completed: false, dependencies: ['A0212'] },
-    { id: 'U0213', title: 'Química Analítica Instrumental', year: 3, completed: false, dependencies: ['A0213'] },
-    { id: 'C0202', title: 'Introducción a las Ciencias Ambientales', year: 3, completed: false, dependencies: ['A0208', 'A0211', 'A0213'] },
-    { id: 'C0204', title: 'Radioactividad y Medio Ambiente', year: 3, completed: false, dependencies: ['A0207', 'A0209'] },
-    { id: 'C0205', title: 'Fisicoquímica Ambiental', year: 3, completed: false, dependencies: ['A0211', 'C0202'] },
-    { id: 'C0206', title: 'Química Biológica', year: 3, completed: false, dependencies: ['A0208', 'A0211', 'A0213', 'C0201'] },
-    { id: 'C0220', title: 'Fenómenos de Transporte', year: 3, completed: false, dependencies: ['A0205', 'A0211'] },
-    { id: 'U0205', title: 'Diseño de Experimentos', year: 4, completed: false, dependencies: ['A0210', 'A0211'] },
-    { id: 'C0207', title: 'Introducción a la Biofisicoquímica', year: 4, completed: false, dependencies: ['A0211', 'C0206'] },
-    { id: 'C0208', title: 'Introducción a la Microbiología', year: 4, completed: false, dependencies: ['C0206'] },
-    { id: 'C0209', title: 'Química Analítica Ambiental', year: 4, completed: false, dependencies: ['U0213'] },
-    { id: 'C0221', title: 'Toxicología General', year: 4, completed: false, dependencies: ['A0213', 'C0206'] },
-    { id: 'C0211', title: 'Ecología Microbiana', year: 4, completed: false, dependencies: ['U0213', 'C0208'] },
-    { id: 'C0212', title: 'Tecnologías Reducción de Contaminantes', year: 4, completed: false, dependencies: ['C0205', 'C0220'] },
-    { id: 'C0213', title: 'Ecotoxicología y Evaluación de Riesgos', year: 4, completed: false, dependencies: ['C0209', 'C0221'] },
-    { id: 'C0214', title: 'Tratamientos Biológicos Reducc. Contam.', year: 5, completed: false, dependencies: ['C0209', 'C0211', 'C0220'] },
-    { id: 'C0215', title: 'Tecnologías Ecocompatibles', year: 5, completed: false, dependencies: ['C0212'] },
-    { id: 'C0216', title: 'Modelos de Dispersión Contaminantes', year: 5, completed: false, dependencies: ['C0205', 'C0209'] },
-    { id: 'OPT-5.1', title: 'Materia Optativa I', year: 5, completed: false, dependencies: [] },
-    { id: 'C0218', title: 'Gestión y Diagnóstico Ambiental', year: 5, completed: false, dependencies: ['C0213', 'C0215'] },
-    { id: 'OPT-5.2', title: 'Materia Optativa II', year: 5, completed: false, dependencies: [] },
-    { id: 'C0219', title: 'Trabajo Final', year: 5, completed: false, dependencies: [] }
-  ]
-};
-
 const SPACE_CAREERS = ["Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica"];
-const CARRERAS = Object.keys(STUDY_PLANS);
+
+// Ahora la lista de carreras está estática porque el contenido viene de la nube
+const CARRERAS = [
+  "Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica",
+  "Lic. en Bioquímica", "Farmacia", "Lic. en Biotecnología",
+  "Lic. en Química", "Óptica Ocular y Optometría", "Tec. Univ. en Química",
+  "Lic. en Cs. de Alimentos", "Tec. Univ. en Alimentos", "Química y Tec. Ambiental"
+];
 
 const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 const MIN_HORA = 8;  
@@ -445,7 +32,6 @@ const HORAS = Array.from({ length: MAX_HORA - MIN_HORA + 1 }, (_, i) => i + MIN_
 // ==========================================
 // 2. COMPONENTES ANIMADOS (Fondos Dinámicos)
 // ==========================================
-
 const TwinklingStar = ({ size, top, left, delay }) => {
   const opacity = useRef(new Animated.Value(0.1)).current;
   useEffect(() => {
@@ -607,7 +193,7 @@ export default function App() {
     return passwordRegex.test(password);
   };
 
-  // --- LOGICA DE FIREBASE MODIFICADA ---
+  // --- LOGICA DE FIREBASE ---
   const handleLogin = async () => {
     if (email.trim() === '' || password === '') {
       Alert.alert("Faltan datos", "Por favor, ingresa tu correo y contraseña.");
@@ -619,11 +205,19 @@ export default function App() {
     }
 
     try {
+      // 1. Autenticar en Google
       const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
       
-      // 1. Descargamos los datos del usuario de Firestore
+      // 2. Traer el plan de la NUBE (¡Adiós código duro!)
+      const planRef = await getDoc(doc(db, "planes_estudio", userCareer));
+      if (!planRef.exists()) {
+        Alert.alert("Error de Servidor", "No se encontró el plan de esta carrera en la base de datos.");
+        return;
+      }
+      const cloudPlan = planRef.data().materias || [];
+
+      // 3. Traer el progreso y horarios del USUARIO
       const userDoc = await getDoc(doc(db, "usuarios", userCredential.user.uid));
-      
       let savedCompletedIds = [];
       let savedHorarios = [];
 
@@ -633,8 +227,8 @@ export default function App() {
         savedHorarios = data.horarios || [];
       }
 
-      // 2. Armamos el plan de estudios marcando como 'completed' solo las que vinieron de Firebase
-      const basePlan = STUDY_PLANS[userCareer].map(subj => ({
+      // 4. Cruzar los datos: Plan en la nube + Progreso del usuario
+      const basePlan = cloudPlan.map(subj => ({
         ...subj,
         completed: savedCompletedIds.includes(subj.id)
       }));
@@ -676,7 +270,6 @@ export default function App() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       
-      // Creamos el documento base del usuario en Firestore
       await setDoc(doc(db, "usuarios", userCredential.user.uid), {
         email: trimmedEmail,
         fechaRegistro: new Date(),
@@ -702,6 +295,7 @@ export default function App() {
     }
   };
 
+  // --- LÓGICA DE CORRELATIVAS ---
   const isSubjectUnlocked = (subject) => {
     if (!subject.dependencies || subject.dependencies.length === 0) return true;
     return subject.dependencies.every(depId => {
@@ -715,20 +309,17 @@ export default function App() {
     return plan.filter(s => !s.completed && isSubjectUnlocked(s));
   }, [plan]);
 
-  // --- GUARDADO DE MATERIAS EN FIREBASE ---
   const handleSubjectPress = async (subject) => {
     if (isSubjectUnlocked(subject)) {
-      // 1. Actualizamos la pantalla (Estado Local)
       const newPlan = plan.map(subj => subj.id === subject.id ? { ...subj, completed: !subj.completed } : subj);
       setPlan(newPlan);
 
-      // 2. Guardamos solo los IDs aprobados en Firebase
       if (auth.currentUser) {
         const completedIds = newPlan.filter(s => s.completed).map(s => s.id);
         try {
             await setDoc(doc(db, "usuarios", auth.currentUser.uid), {
                 completedSubjects: completedIds
-            }, { merge: true }); // Merge true evita borrar los horarios!
+            }, { merge: true }); 
         } catch(error) {
             console.error("Error guardando progreso:", error);
         }
@@ -764,7 +355,6 @@ export default function App() {
     return grouped;
   }, [plan]);
 
-  // --- GUARDADO DE HORARIOS EN FIREBASE ---
   const addToSchedule = async () => {
     const start = parseInt(newStartTime);
     const end = parseInt(newEndTime);
@@ -783,7 +373,6 @@ export default function App() {
 
       const updatedHorarios = [...horarios, newHorario];
       
-      // 1. Actualizamos Pantalla
       setHorarios(updatedHorarios);
       setScheduleModalVisible(false);
       setNewSubject(null);
@@ -791,12 +380,11 @@ export default function App() {
       setNewEndTime('10');
       setSelectedDayTab(newDay);
 
-      // 2. Actualizamos Firebase
       if (auth.currentUser) {
         try {
             await setDoc(doc(db, "usuarios", auth.currentUser.uid), {
                 horarios: updatedHorarios
-            }, { merge: true }); // Merge true evita borrar las materias aprobadas!
+            }, { merge: true }); 
         } catch(error) {
             console.error("Error guardando horario:", error);
         }
@@ -810,10 +398,8 @@ export default function App() {
   const removeScheduleItem = async (id) => {
     const updatedHorarios = horarios.filter(item => item.id !== id);
     
-    // 1. Actualizamos Pantalla
     setHorarios(updatedHorarios);
 
-    // 2. Borramos de Firebase
     if (auth.currentUser) {
         try {
             await setDoc(doc(db, "usuarios", auth.currentUser.uid), {
@@ -946,8 +532,8 @@ export default function App() {
           signOut(auth);
           setIsAuthenticated(false);
           setPassword('');
-          setPlan([]); // Limpiamos el plan al salir
-          setHorarios([]); // Limpiamos los horarios al salir
+          setPlan([]); 
+          setHorarios([]); 
         }} style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}>
           <Ionicons name="log-out" size={20} color="#FCA5A5" />
         </TouchableOpacity>
