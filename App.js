@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   StyleSheet, Text, View, ScrollView, TouchableOpacity, 
   SafeAreaView, StatusBar, TextInput, Modal, KeyboardAvoidingView, Platform,
-  Animated, Dimensions, ActivityIndicator
+  Animated, Dimensions, ActivityIndicator, Easing, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -232,7 +232,7 @@ export default function App() {
       const planDoc = await getDoc(doc(db, "planes_estudio", userCareer));
       
       if (!planDoc.exists()) {
-        showAlert("Error de Backend", `El plan de estudios para "${userCareer}" aún no está cargado en la base de datos.`);
+        showAlert("Advertencia", `Solo se puede tener un plan de estudios por cuenta. Si estas inscripto en otra carrera crea otra cuenta por favor.`);
         setIsLoading(false);
         return;
       }
@@ -868,7 +868,7 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   screenContainer: { padding: 24, paddingTop: Platform.OS === 'android' ? 40 : 24 },
   
-  nebula: { position: 'absolute', width: 300, height: 300, borderRadius: 150, opacity: 0.25 },
+  nebula: { position: 'absolute', width: 300, height: 300, borderRadius: 150, opacity: 0.25, filter: 'blur(60px)' },
   shootingStar: { position: 'absolute', width: 100, height: 2, backgroundColor: '#FFF', borderRadius: 2, shadowColor: '#FFF', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 10 },
   
   authContent: { flex: 1, justifyContent: 'center', paddingHorizontal: 30 },
