@@ -5,6 +5,7 @@ import {
   Animated, Dimensions, ActivityIndicator, Easing, Alert, Linking
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser'; // Navegador interno para Mercado Pago
 
 // === IMPORTACIONES DE FIREBASE ===
 import { auth, db } from './firebaseConfig'; 
@@ -14,8 +15,18 @@ import { doc, setDoc, getDoc, collection, getDocs } from 'firebase/firestore';
 const { width, height } = Dimensions.get('window');
 
 // ==========================================
-// 1. CONSTANTES GLOBALES
+// 1. CONSTANTES Y CONFIGURACIÓN MANUAL
 // ==========================================
+
+// 💰 APARTADO PARA CAMBIAR PRECIOS MANUALMENTE 💰
+// Escribe el nombre exacto de la carpeta entre comillas y asignale el precio.
+const TABLA_DE_PRECIOS = {
+  "Álgebra Lineal y Análisis 2": 10
+  // Agrega todas las carpetas que quieras aquí abajo...
+};
+
+const PRECIO_POR_DEFECTO = 50; // Si una carpeta no está en la tabla de arriba, costará esto.
+
 const SPACE_CAREERS = ["Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica"];
 
 const CARRERAS = [
@@ -161,10 +172,11 @@ export default function App() {
   const [userCareer, setUserCareer] = useState('');
   const [careerModalVisible, setCareerModalVisible] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
-
+  
   const [isLoading, setIsLoading] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false); 
   const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', buttons: null });
-
+  
   const [activeTab, setActiveTab] = useState('Plan'); 
   const [plan, setPlan] = useState([]);
   
@@ -184,7 +196,6 @@ export default function App() {
   const [tiendaData, setTiendaData] = useState([]);
   const [isStoreLoading, setIsStoreLoading] = useState(true);
 
-  // El tema cambia según la carrera que esté en el estado (que ahora vendrá de la base de datos)
   const isSpaceTheme = !userCareer || SPACE_CAREERS.includes(userCareer);
   const theme = {
     primary: isSpaceTheme ? '#818CF8' : '#34D399', 
@@ -200,6 +211,7 @@ export default function App() {
     setCustomAlert({ visible: true, title, message, buttons });
   };
 
+  // --- MOTOR DE ORDENAMIENTO ---
   const calcularPesoDeOrden = (titulo) => {
     const t = titulo.toLowerCase();
     if (t.includes('ingreso') || t.includes('matemática preuniversitaria')) return 10;
@@ -213,6 +225,16 @@ export default function App() {
     if (t.includes('avanzad')) return 900;
     if (t.includes('optativa')) return 1000;
     return 100; 
+  };
+
+  // --- MOTOR DE PRECIOS LECTURA DE TABLA ---
+  const calcularPrecio = (tituloExacto) => {
+    // Si el nombre exacto de la carpeta está en la tabla, usamos ese precio
+    if (TABLA_DE_PRECIOS[tituloExacto] !== undefined) {
+      return TABLA_DE_PRECIOS[tituloExacto];
+    }
+    // Si no está, devolvemos el valor por defecto
+    return PRECIO_POR_DEFECTO;
   };
 
   useEffect(() => {
@@ -237,7 +259,7 @@ export default function App() {
                 id: `${doc.id}_pack_${index}`, 
                 title: carpetaPack.name,       
                 category: category,
-                price: 1500,                   
+                price: calcularPrecio(carpetaPack.name), // Usa la tabla de arriba
                 icon: category === 'FHOM' ? 'calculator' : 'flask',
                 subjects: subMaterias.length > 0 ? subMaterias : 'Material de estudio y resúmenes',
                 driveTree: carpetaPack         
@@ -266,13 +288,11 @@ export default function App() {
     }
   }, [isAuthenticated]);
 
-  // --- LÓGICA DE INICIO DE SESIÓN ACTUALIZADA ---
   const handleLogin = async () => {
     if (email.trim() === '' || password === '') {
       showAlert("Faltan datos", "Por favor, ingresa tu correo y contraseña.");
       return;
     }
-    // Ya no pedimos la carrera aquí.
 
     setIsLoading(true); 
     try {
@@ -282,14 +302,14 @@ export default function App() {
       let savedCompletedIds = [];
       let savedHorarios = [];
       let savedApuntes = [];
-      let carreraGuardada = ''; // Buscaremos la carrera en la BD
+      let carreraGuardada = '';
 
       if (userDoc.exists()) {
         const data = userDoc.data();
         savedCompletedIds = data.completedSubjects || [];
         savedHorarios = data.horarios || [];
         savedApuntes = data.misApuntes || [];
-        carreraGuardada = data.career || ''; // Obtenemos la carrera!
+        carreraGuardada = data.career || ''; 
       }
 
       if (!carreraGuardada) {
@@ -299,7 +319,6 @@ export default function App() {
          return;
       }
 
-      // Seteamos la carrera para que la UI cambie de color automáticamente
       setUserCareer(carreraGuardada);
      
       const planDoc = await getDoc(doc(db, "planes_estudio", carreraGuardada));
@@ -338,7 +357,6 @@ export default function App() {
     }
   };
 
-  // --- LÓGICA DE REGISTRO ACTUALIZADA ---
   const handleRegister = async () => {
     const trimmedEmail = email.trim();
 
@@ -346,7 +364,6 @@ export default function App() {
       showAlert("Faltan Datos", "Debes completar tu correo y contraseña para registrarte.");
       return;
     }
-    // AQUÍ SÍ EXIGIMOS QUE ELIJA CARRERA
     if (userCareer === '') {
       showAlert("Falta Carrera", "Selecciona a qué carrera te vas a inscribir.");
       return;
@@ -364,10 +381,9 @@ export default function App() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       
-      // Guardamos la carrera seleccionada permanentemente en su perfil
       await setDoc(doc(db, "usuarios", userCredential.user.uid), {
         email: trimmedEmail,
-        career: userCareer, // <-- ESTA ES LA CLAVE MÁGICA
+        career: userCareer,
         fechaRegistro: new Date(),
         completedSubjects: [],
         horarios: [],
@@ -379,7 +395,7 @@ export default function App() {
             setCustomAlert({ visible: false, title: '', message: '', buttons: null });
             setAuthMode('login');
             setPassword(''); 
-            setUserCareer(''); // Limpiamos para que inicie sesión en limpio
+            setUserCareer(''); 
         }}]
       );
       
@@ -404,7 +420,7 @@ export default function App() {
       setDrivePath([]);
       setPassword('');
       setTiendaData([]); 
-      setUserCareer(''); // Limpiamos la carrera al salir para que vuelva el fondo negro default
+      setUserCareer(''); 
     } catch (error) {
       showAlert("Error", "No se pudo cerrar sesión correctamente.");
     }
@@ -503,25 +519,47 @@ export default function App() {
     }
   };
 
-  const simularCompra = (pack) => {
-    showAlert("Confirmar Compra", `¿Deseas adquirir el "${pack.title}" por $${pack.price}?`, [
-      { text: "Cancelar", style: "cancel", onPress: () => setCustomAlert({ visible: false, title: '', message: '', buttons: null }) },
-      { text: "Simular Pago", onPress: async () => {
-          setCustomAlert({ visible: false, title: '', message: '', buttons: null });
-          const nuevosApuntes = [...misApuntes, pack.id];
-          setMisApuntes(nuevosApuntes);
-          
-          if (auth.currentUser) {
-            try {
-                await setDoc(doc(db, "usuarios", auth.currentUser.uid), { misApuntes: nuevosApuntes }, { merge: true }); 
-                setTimeout(() => {
-                  showAlert("¡Compra Exitosa!", `El ${pack.title} ya está en tu biblioteca.`);
-                  setMercadoSubTab('mis_apuntes');
-                }, 500);
-            } catch(error) { console.error("Error guardando apunte:", error); }
-          }
-      }}
-    ]);
+  // --- LÓGICA DE PAGO CON EXPO WEB BROWSER ---
+  const procesarCompra = async (pack) => {
+    setIsProcessingPayment(true); 
+    
+    try {
+      // ⚠️ IMPORTANTE: Aquí está tu IP. Asegúrate de que siga siendo la misma en tu PC.
+      const SERVER_URL = "http://192.168.0.32:3000/crear_preferencia"; 
+      
+      const response = await fetch(SERVER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          title: pack.title, 
+          price: pack.price,
+          packId: pack.id,                         
+          userId: auth.currentUser?.uid || 'anon' 
+        })
+      });
+      
+      const data = await response.json();
+
+      if (data.init_point) {
+        
+        // ABRIR EL NAVEGADOR INTERNO DE LA APP
+        await WebBrowser.openBrowserAsync(data.init_point);
+        
+        // Cuando vuelve del navegador, le avisamos que estamos esperando la confirmación de MP.
+        // Ya no regalamos el apunte temporalmente. Dejamos que el Webhook en el servidor haga su magia.
+        setIsProcessingPayment(false); 
+        showAlert("Verificando pago...", "Si tu pago fue aprobado por Mercado Pago, tu apunte aparecerá en la sección 'Mis Apuntes' en los próximos minutos.\n\nPuedes salir y volver a entrar a la app para actualizar.");
+
+      } else {
+        showAlert("Error de Servidor", "No se pudo generar el link de pago.");
+        setIsProcessingPayment(false);
+      }
+
+    } catch (error) {
+      console.error(error);
+      showAlert("Error de Conexión", "No se pudo contactar con el servidor de pagos. Revisa que tu IP siga siendo la correcta.");
+      setIsProcessingPayment(false);
+    } 
   };
 
   const DynamicBackground = theme.Background;
@@ -554,7 +592,6 @@ export default function App() {
                   <TextInput style={styles.unifiedInput} placeholder="Contraseña" placeholderTextColor="#64748B" secureTextEntry value={password} onChangeText={setPassword}/>
                 </View>
 
-                {/* EL SELECTOR DE CARRERA AHORA SOLO APARECE AL REGISTRARSE */}
                 {authMode === 'register' && (
                   <TouchableOpacity style={styles.unifiedInputContainer} onPress={() => setCareerModalVisible(true)}>
                     <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
@@ -903,6 +940,14 @@ export default function App() {
                 ))}
               </View>
 
+              {/* SPINNER NUEVO */}
+              {isProcessingPayment && (
+                <View style={{ backgroundColor: theme.secondary+'30', padding: 15, borderRadius: 15, marginBottom: 15, flexDirection: 'row', alignItems: 'center' }}>
+                  <ActivityIndicator color={theme.primary} style={{marginRight: 10}}/>
+                  <Text style={{color: '#FFF', fontWeight: 'bold'}}>Conectando con Mercado Pago...</Text>
+                </View>
+              )}
+
               {itemsMostrados.map(pack => {
                 const yaComprado = misApuntes.includes(pack.id);
                 return (
@@ -920,9 +965,9 @@ export default function App() {
                       {yaComprado ? (
                         <View style={[styles.storeBuyBtn, { backgroundColor: '#475569' }]}><Text style={styles.storeBuyBtnText}>Adquirido</Text></View>
                       ) : (
-                        <TouchableOpacity style={[styles.storeBuyBtn, { backgroundColor: theme.secondary }]} onPress={() => simularCompra(pack)}>
-                          <Text style={styles.storeBuyBtnText}>Adquirir</Text>
-                          <Ionicons name="cart-outline" size={16} color="#FFF" style={{marginLeft: 5}}/>
+                        <TouchableOpacity style={[styles.storeBuyBtn, { backgroundColor: theme.secondary }]} onPress={() => procesarCompra(pack)} disabled={isProcessingPayment}>
+                          <Text style={styles.storeBuyBtnText}>Comprar</Text>
+                          <Ionicons name="card-outline" size={16} color="#FFF" style={{marginLeft: 5}}/>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -965,7 +1010,6 @@ export default function App() {
               )}
             </View>
           )}
-
           <View style={{height: 100}} />
         </ScrollView>
       </View>
