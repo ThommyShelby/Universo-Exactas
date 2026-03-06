@@ -485,8 +485,6 @@ export default function App() {
             console.error("Error guardando horario:", error);
         }
       }
-    } else {
-      showAlert("Datos incompletos", "Por favor, selecciona una materia, un día y un horario válido (ej: 8 a 10).");
     }
   };
 
@@ -641,6 +639,7 @@ export default function App() {
             </View>
           </View>
         </Modal>
+
       </View>
     );
   }
@@ -1000,6 +999,7 @@ export default function App() {
             <Text style={[styles.navTextDark, activeTab === 'Mercado' && { color: theme.primary, fontWeight: '900' }]}>Apuntes</Text>
           </TouchableOpacity>
         </View>
+      </SafeAreaView>
 
         <Modal visible={customAlert.visible} transparent={true} animationType="fade">
           <View style={styles.modalOverlayDark}>
