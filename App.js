@@ -7,7 +7,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 // === IMPORTACIONES DE FIREBASE ===
-// Asegúrate de que tu archivo firebaseConfig.js esté en la misma carpeta y exporte auth y db
 import { auth, db } from './firebaseConfig'; 
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -160,7 +159,6 @@ const ChemistryBackground = () => {
 // 3. COMPONENTE PRINCIPAL (APP)
 // ==========================================
 export default function App() {
-  // Estados de Autenticación
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [email, setEmail] = useState('');
@@ -169,15 +167,12 @@ export default function App() {
   const [careerModalVisible, setCareerModalVisible] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
-  // Estados de UI (Cargas y Alertas)
   const [isLoading, setIsLoading] = useState(false);
   const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', buttons: null });
 
-  // Estados de Navegación y Plan
   const [activeTab, setActiveTab] = useState('Plan');
   const [plan, setPlan] = useState([]);
   
-  // Estados de Horarios (Calendario Grilla)
   const [horarios, setHorarios] = useState([]);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [selectedDayTab, setSelectedDayTab] = useState('Lunes');
@@ -186,7 +181,6 @@ export default function App() {
   const [newStartTime, setNewStartTime] = useState('8'); 
   const [newEndTime, setNewEndTime] = useState('10');    
 
-  // Tema Dinámico
   const isSpaceTheme = !userCareer || SPACE_CAREERS.includes(userCareer);
   const theme = {
     primary: isSpaceTheme ? '#818CF8' : '#34D399', 
@@ -198,10 +192,31 @@ export default function App() {
     Background: isSpaceTheme ? GalaxyBackground : ChemistryBackground
   };
 
-  // Función global para mostrar alertas personalizadas
   const showAlert = (title, message, buttons = null) => {
     setCustomAlert({ visible: true, title, message, buttons });
   };
+
+  // --- REUTILIZABLE: DISEÑO DE LA ALERTA PARA EVITAR BUGS DE Z-INDEX ---
+  const renderAlertContent = () => (
+    <View style={styles.customAlertCard}>
+      <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
+        <Ionicons name="alert-circle" size={36} color={theme.primary} />
+      </View>
+      <Text style={styles.alertTitle}>{customAlert.title}</Text>
+      <Text style={styles.alertMessage}>{customAlert.message}</Text>
+      <View style={styles.alertButtonsRow}>
+        {customAlert.buttons ? customAlert.buttons.map((btn, index) => (
+          <TouchableOpacity key={index} style={[styles.alertBtn, { backgroundColor: btn.style === 'destructive' ? '#EF4444' : theme.secondary, marginHorizontal: 5 }]} onPress={() => { if(btn.onPress) btn.onPress(); else setCustomAlert({ visible: false, title: '', message: '', buttons: null }); }}>
+            <Text style={styles.alertBtnText}>{btn.text}</Text>
+          </TouchableOpacity>
+        )) : (
+          <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
+            <Text style={styles.alertBtnText}>Entendido</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
 
   // --- LÓGICA DE FIREBASE ---
   const handleLogin = async () => {
@@ -227,8 +242,7 @@ export default function App() {
         savedCompletedIds = data.completedSubjects || [];
         savedHorarios = data.horarios || [];
       }
-     
-      // Traer plan de estudios desde Firebase
+      
       const planDoc = await getDoc(doc(db, "planes_estudio", userCareer));
       
       if (!planDoc.exists()) {
@@ -239,7 +253,6 @@ export default function App() {
 
       const materiasDelBack = planDoc.data().materias || planDoc.data().planes_estudio || [];
 
-      // Mapeamos las materias verificando si ya estaban aprobadas por el usuario
       const basePlan = materiasDelBack.map(subj => ({
         ...subj,
         completed: savedCompletedIds.includes(subj.id)
@@ -315,7 +328,6 @@ export default function App() {
     }
   };
 
-  // --- LÓGICA DE CORRELATIVAS Y PLAN ---
   const isSubjectUnlocked = (subject) => {
     if (!subject.dependencies || subject.dependencies.length === 0) return true;
     return subject.dependencies.every(depId => {
@@ -374,43 +386,61 @@ export default function App() {
     return grouped;
   }, [plan]);
 
-  // --- LÓGICA DE HORARIOS ---
+  // --- LÓGICA DE HORARIOS CON VALIDACIONES MATEMÁTICAS ---
   const addToSchedule = async () => {
     const start = parseInt(newStartTime);
     const end = parseInt(newEndTime);
 
-    if (newSubject && newDay && start && end && start < end && start >= MIN_HORA && end <= MAX_HORA + 1) {
-      
-      const newHorario = { 
-        id: Math.random().toString(), 
-        subject: newSubject.title, 
-        code: newSubject.id,
-        day: newDay, 
-        start: start, 
-        end: end, 
-        color: theme.primary 
-      };
+    // 1. Validar campos incompletos o fuera de rango de la grilla
+    if (!newSubject || !newDay || isNaN(start) || isNaN(end) || start < MIN_HORA || end > MAX_HORA + 1) {
+      showAlert("Horario Inválido", `Por favor selecciona una materia, un día y horas entre las ${MIN_HORA}:00 y las ${MAX_HORA + 1}:00.`);
+      return;
+    }
 
-      const updatedHorarios = [...horarios, newHorario];
-      
-      setHorarios(updatedHorarios);
-      setScheduleModalVisible(false);
-      setNewSubject(null);
-      setNewStartTime('8');
-      setNewEndTime('10');
-      setSelectedDayTab(newDay);
+    // 2. Validar que la hora no esté invertida (Inicio mayor o igual a Fin)
+    if (start >= end) {
+      showAlert("Rango Inválido", "La hora de finalización debe ser mayor a la hora de inicio.\n\nEjemplo válido: Inicio 8, Fin 10.");
+      return;
+    }
 
-      if (auth.currentUser) {
-        try {
-            await setDoc(doc(db, "usuarios", auth.currentUser.uid), {
-                horarios: updatedHorarios
-            }, { merge: true }); 
-        } catch(error) {
-            console.error("Error guardando horario:", error);
-        }
+    // 3. Validar superposición (overlap) de bloques
+    const eventosDelMismoDia = horarios.filter(h => h.day === newDay);
+    const haySuperposicion = eventosDelMismoDia.some(evento => {
+      return (start < evento.end && end > evento.start); // Fórmula matemática para cruce de rangos
+    });
+
+    if (haySuperposicion) {
+      showAlert("Tope de Horarios ⚠️", "Ya tienes una materia asignada en este bloque horario. Por favor, verifica tu grilla y elige otro horario.");
+      return;
+    }
+
+    const newHorario = { 
+      id: Math.random().toString(), 
+      subject: newSubject.title, 
+      code: newSubject.id,
+      day: newDay, 
+      start: start, 
+      end: end, 
+      color: theme.primary 
+    };
+
+    const updatedHorarios = [...horarios, newHorario];
+    
+    setHorarios(updatedHorarios);
+    setScheduleModalVisible(false);
+    setNewSubject(null);
+    setNewStartTime('8');
+    setNewEndTime('10');
+    setSelectedDayTab(newDay);
+
+    if (auth.currentUser) {
+      try {
+          await setDoc(doc(db, "usuarios", auth.currentUser.uid), {
+              horarios: updatedHorarios
+          }, { merge: true }); 
+      } catch(error) {
+          console.error("Error guardando horario:", error);
       }
-    } else {
-      showAlert("Datos incompletos", "Por favor, selecciona una materia, un día y un horario válido (ej: 8 a 10).");
     }
   };
 
@@ -521,7 +551,6 @@ export default function App() {
           </KeyboardAvoidingView>
         </SafeAreaView>
 
-        {/* Modal Selección de Carrera */}
         <Modal visible={careerModalVisible} animationType="fade" transparent={true}>
           <View style={styles.modalOverlayDark}>
             <View style={styles.modalContentDark}>
@@ -545,30 +574,14 @@ export default function App() {
             </View>
           </View>
         </Modal>
-
-        {/* Modal Global de Alertas */}
+        
+        {/* ALERTA GLOBAL PARA PANTALLA LOGIN */}
         <Modal visible={customAlert.visible} transparent={true} animationType="fade">
           <View style={styles.modalOverlayDark}>
-            <View style={styles.customAlertCard}>
-              <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
-                <Ionicons name="alert-circle" size={36} color={theme.primary} />
-              </View>
-              <Text style={styles.alertTitle}>{customAlert.title}</Text>
-              <Text style={styles.alertMessage}>{customAlert.message}</Text>
-              <View style={styles.alertButtonsRow}>
-                {customAlert.buttons ? customAlert.buttons.map((btn, index) => (
-                  <TouchableOpacity key={index} style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => { if(btn.onPress) btn.onPress(); else setCustomAlert({ visible: false, title: '', message: '', buttons: null }); }}>
-                    <Text style={styles.alertBtnText}>{btn.text}</Text>
-                  </TouchableOpacity>
-                )) : (
-                  <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
-                    <Text style={styles.alertBtnText}>Entendido</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
+            {renderAlertContent()}
           </View>
         </Modal>
+
       </View>
     );
   }
@@ -685,7 +698,7 @@ export default function App() {
                               `¿Quitar ${evento.subject} del horario?`,
                               [
                                 { text: "Cancelar", onPress: () => setCustomAlert(prev => ({...prev, visible: false})) }, 
-                                { text: "Eliminar", onPress: () => { removeScheduleItem(evento.id); setCustomAlert(prev => ({...prev, visible: false})); } }
+                                { text: "Eliminar", style: 'destructive', onPress: () => { removeScheduleItem(evento.id); setCustomAlert(prev => ({...prev, visible: false})); } }
                               ]
                             );
                           }}
@@ -709,6 +722,7 @@ export default function App() {
           <Ionicons name="add" size={30} color="#FFF" />
         </TouchableOpacity>
 
+        {/* MODAL PARA AGREGAR HORARIOS */}
         <Modal animationType="slide" transparent={true} visible={scheduleModalVisible}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlayDark}>
             <View style={styles.modalSheetDark}>
@@ -768,6 +782,14 @@ export default function App() {
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
+
+          {/* TRUCO: RENDERIZAR LA ALERTA DENTRO DEL MODAL SI ESTÁ ABIERTO */}
+          {customAlert.visible && (
+            <View style={[styles.modalOverlayDark, StyleSheet.absoluteFill, { zIndex: 9999, elevation: 9999 }]}>
+              {renderAlertContent()}
+            </View>
+          )}
+
         </Modal>
       </View>
     );
@@ -800,63 +822,46 @@ export default function App() {
             <Text style={styles.navTextDark}>Mercado</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Modal de Alerta Global para el Interior de la App */}
-        <Modal visible={customAlert.visible} transparent={true} animationType="fade">
-          <View style={styles.modalOverlayDark}>
-            <View style={styles.customAlertCard}>
-              <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
-                <Ionicons name="alert-circle" size={36} color={theme.primary} />
-              </View>
-              <Text style={styles.alertTitle}>{customAlert.title}</Text>
-              <Text style={styles.alertMessage}>{customAlert.message}</Text>
-              <View style={styles.alertButtonsRow}>
-                {customAlert.buttons ? customAlert.buttons.map((btn, index) => (
-                  <TouchableOpacity key={index} style={[styles.alertBtn, { backgroundColor: btn.style === 'destructive' ? '#EF4444' : theme.secondary, marginHorizontal: 5 }]} onPress={() => { if(btn.onPress) btn.onPress(); else setCustomAlert({ visible: false, title: '', message: '', buttons: null }); }}>
-                    <Text style={styles.alertBtnText}>{btn.text}</Text>
-                  </TouchableOpacity>
-                )) : (
-                  <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
-                    <Text style={styles.alertBtnText}>Entendido</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Modal de Cerrar Sesión */}
-        <Modal animationType="fade" transparent={true} visible={logoutModalVisible}>
-          <View style={styles.modalOverlayDark}>
-            <View style={[styles.modalContentDark, { alignItems: 'center', paddingVertical: 40 }]}>
-              <Ionicons name="log-out-outline" size={60} color="#FCA5A5" style={{marginBottom: 20}} />
-              <Text style={[styles.modalTitleDark, {textAlign: 'center', marginBottom: 10}]}>¿Cerrar Sesión?</Text>
-              <Text style={{color: '#94A3B8', fontSize: 16, textAlign: 'center', marginBottom: 30, paddingHorizontal: 10}}>
-                Tendrás que volver a ingresar tus credenciales para acceder a tus materias y horarios.
-              </Text>
-              <View style={{flexDirection: 'row', justifyContent: 'space-between', width: '100%'}}>
-                <TouchableOpacity style={[styles.sheetCancelBtn, {flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.8)', borderRadius: 16, marginRight: 10}]} onPress={() => setLogoutModalVisible(false)}>
-                  <Text style={styles.sheetCancelText}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.sheetSaveBtnDark, {flex: 1, backgroundColor: '#EF4444', marginTop: 0}]} 
-                  onPress={() => {
-                    signOut(auth);
-                    setIsAuthenticated(false);
-                    setPassword('');
-                    setPlan([]); 
-                    setHorarios([]);
-                    setLogoutModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.sheetSaveText, {fontSize: 16}]}>Sí, salir</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
       </SafeAreaView>
+
+      {/* Modal de Alerta Global (Se deshabilita temporalmente si el Modal de Horarios está abierto para evitar conflictos) */}
+      <Modal visible={customAlert.visible && !scheduleModalVisible} transparent={true} animationType="fade">
+        <View style={styles.modalOverlayDark}>
+          {renderAlertContent()}
+        </View>
+      </Modal>
+
+      {/* Modal de Cerrar Sesión */}
+      <Modal animationType="fade" transparent={true} visible={logoutModalVisible}>
+        <View style={styles.modalOverlayDark}>
+          <View style={[styles.modalContentDark, { alignItems: 'center', paddingVertical: 40 }]}>
+            <Ionicons name="log-out-outline" size={60} color="#FCA5A5" style={{marginBottom: 20}} />
+            <Text style={[styles.modalTitleDark, {textAlign: 'center', marginBottom: 10}]}>¿Cerrar Sesión?</Text>
+            <Text style={{color: '#94A3B8', fontSize: 16, textAlign: 'center', marginBottom: 30, paddingHorizontal: 10}}>
+              Tendrás que volver a ingresar tus credenciales para acceder a tus materias y horarios.
+            </Text>
+            <View style={{flexDirection: 'row', justifyContent: 'space-between', width: '100%'}}>
+              <TouchableOpacity style={[styles.sheetCancelBtn, {flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.8)', borderRadius: 16, marginRight: 10}]} onPress={() => setLogoutModalVisible(false)}>
+                <Text style={styles.sheetCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.sheetSaveBtnDark, {flex: 1, backgroundColor: '#EF4444', marginTop: 0}]} 
+                onPress={() => {
+                  signOut(auth);
+                  setIsAuthenticated(false);
+                  setPassword('');
+                  setPlan([]); 
+                  setHorarios([]);
+                  setLogoutModalVisible(false);
+                }}
+              >
+                <Text style={[styles.sheetSaveText, {fontSize: 16}]}>Sí, salir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
