@@ -2,9 +2,12 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   StyleSheet, Text, View, ScrollView, TouchableOpacity, 
   SafeAreaView, StatusBar, TextInput, Modal, KeyboardAvoidingView, Platform,
-  Animated, Dimensions, Easing, Alert, ActivityIndicator
+  Animated, Dimensions, ActivityIndicator, Easing, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
+// === IMPORTACIONES DE FIREBASE ===
+// Asegúrate de que tu archivo firebaseConfig.js esté en la misma carpeta y exporte auth y db
 import { auth, db } from './firebaseConfig'; 
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -16,7 +19,6 @@ const { width, height } = Dimensions.get('window');
 // ==========================================
 const SPACE_CAREERS = ["Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica"];
 
-// Ahora la lista de carreras está estática porque el contenido viene de la nube
 const CARRERAS = [
   "Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica",
   "Lic. en Bioquímica", "Farmacia", "Lic. en Biotecnología",
@@ -28,6 +30,11 @@ const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 const MIN_HORA = 8;  
 const MAX_HORA = 22; 
 const HORAS = Array.from({ length: MAX_HORA - MIN_HORA + 1 }, (_, i) => i + MIN_HORA);
+
+const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const isValidPassword = (password) => {
+  return password.length >= 6 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password);
+};
 
 // ==========================================
 // 2. COMPONENTES ANIMADOS (Fondos Dinámicos)
@@ -153,26 +160,24 @@ const ChemistryBackground = () => {
 // 3. COMPONENTE PRINCIPAL (APP)
 // ==========================================
 export default function App() {
+  // Estados de Autenticación
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [userCareer, setUserCareer] = useState('');
   const [careerModalVisible, setCareerModalVisible] = useState(false);
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+
+  // Estados de UI (Cargas y Alertas)
   const [isLoading, setIsLoading] = useState(false);
-  const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', buttons: [] });
-  const showAlert = (title, message, buttons = null) => {
-    const defaultButton = [{ text: "Entendido", onPress: () => setCustomAlert(prev => ({...prev, visible: false})) }];
-    setCustomAlert({
-      visible: true,
-      title,
-      message,
-      buttons: buttons || defaultButton
-    });
-  };
+  const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', buttons: null });
+
+  // Estados de Navegación y Plan
   const [activeTab, setActiveTab] = useState('Plan');
   const [plan, setPlan] = useState([]);
   
+  // Estados de Horarios (Calendario Grilla)
   const [horarios, setHorarios] = useState([]);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [selectedDayTab, setSelectedDayTab] = useState('Lunes');
@@ -181,8 +186,8 @@ export default function App() {
   const [newStartTime, setNewStartTime] = useState('8'); 
   const [newEndTime, setNewEndTime] = useState('10');    
 
+  // Tema Dinámico
   const isSpaceTheme = !userCareer || SPACE_CAREERS.includes(userCareer);
-  
   const theme = {
     primary: isSpaceTheme ? '#818CF8' : '#34D399', 
     secondary: isSpaceTheme ? '#6366F1' : '#059669',
@@ -193,17 +198,12 @@ export default function App() {
     Background: isSpaceTheme ? GalaxyBackground : ChemistryBackground
   };
 
-  const isValidEmail = (email) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+  // Función global para mostrar alertas personalizadas
+  const showAlert = (title, message, buttons = null) => {
+    setCustomAlert({ visible: true, title, message, buttons });
   };
 
-  const isValidPassword = (password) => {
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{6,}$/;
-    return passwordRegex.test(password);
-  };
-
-  // --- LOGICA DE FIREBASE MODIFICADA ---
+  // --- LÓGICA DE FIREBASE ---
   const handleLogin = async () => {
     if (email.trim() === '' || password === '') {
       showAlert("Faltan datos", "Por favor, ingresa tu correo y contraseña.");
@@ -214,7 +214,7 @@ export default function App() {
       return;
     }
 
-    setIsLoading(true); // Iniciamos el spinner
+    setIsLoading(true); 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
       const userDoc = await getDoc(doc(db, "usuarios", userCredential.user.uid));
@@ -227,8 +227,20 @@ export default function App() {
         savedCompletedIds = data.completedSubjects || [];
         savedHorarios = data.horarios || [];
       }
+     
+      // Traer plan de estudios desde Firebase
+      const planDoc = await getDoc(doc(db, "planes_estudio", userCareer));
+      
+      if (!planDoc.exists()) {
+        showAlert("Advertencia", `Solo se puede tener un plan de estudios por cuenta. Si estas inscripto en otra carrera crea otra cuenta por favor.`);
+        setIsLoading(false);
+        return;
+      }
 
-      const basePlan = STUDY_PLANS[userCareer].map(subj => ({
+      const materiasDelBack = planDoc.data().materias || planDoc.data().planes_estudio || [];
+
+      // Mapeamos las materias verificando si ya estaban aprobadas por el usuario
+      const basePlan = materiasDelBack.map(subj => ({
         ...subj,
         completed: savedCompletedIds.includes(subj.id)
       }));
@@ -238,15 +250,17 @@ export default function App() {
       setIsAuthenticated(true);
       
     } catch (error) {
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+      if (error.name === 'ReferenceError') {
+        showAlert("Error de Código", error.message);
+      } else if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
         showAlert("Acceso denegado", "El correo o la contraseña son incorrectos.");
       } else if (error.code === 'auth/invalid-email') {
-        showAlert("Correo inválido", "El formato del correo no es correcto (ej: nombre@dominio.com).");
+        showAlert("Correo inválido", "El formato del correo no es correcto.");
       } else {
-        showAlert("Error", error.message);
+        showAlert("Error de servidor", error.message);
       }
     } finally {
-      setIsLoading(false); // Apagamos el spinner pase lo que pase
+      setIsLoading(false);
     }
   };
 
@@ -258,18 +272,18 @@ export default function App() {
       return;
     }
     if (!isValidEmail(trimmedEmail)) {
-      showAlert("Correo inválido", "Asegúrate de que tu correo tenga un formato válido (debe incluir '@' y un dominio).");
+      showAlert("Correo inválido", "Asegúrate de que tu correo tenga un formato válido.");
       return;
     }
     if (!isValidPassword(password)) {
       showAlert(
         "Contraseña débil", 
-        "La contraseña debe tener al menos:\n\n• 6 caracteres\n• 1 letra mayúscula\n• 1 letra minúscula\n• 1 número\n\n(Sin caracteres especiales como @, #, $)"
+        "La contraseña debe tener al menos:\n\n• 6 caracteres\n• 1 letra mayúscula\n• 1 letra minúscula\n• 1 número"
       );
       return;
     }
     
-    setIsLoading(true); // Iniciamos el spinner
+    setIsLoading(true); 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       
@@ -284,7 +298,7 @@ export default function App() {
           "¡Registro Exitoso!", 
           "Tu cuenta ha sido creada correctamente. Ahora selecciona tu carrera e inicia sesión.",
           [{ text: "Entendido", onPress: () => {
-              setCustomAlert(prev => ({...prev, visible: false}));
+              setCustomAlert({ visible: false, title: '', message: '', buttons: null });
               setAuthMode('login');
               setPassword(''); 
           }}]
@@ -297,11 +311,11 @@ export default function App() {
         showAlert("Error al registrar", error.message);
       }
     } finally {
-      setIsLoading(false); // Apagamos el spinner
+      setIsLoading(false); 
     }
   };
 
-  // --- LÓGICA DE CORRELATIVAS ---
+  // --- LÓGICA DE CORRELATIVAS Y PLAN ---
   const isSubjectUnlocked = (subject) => {
     if (!subject.dependencies || subject.dependencies.length === 0) return true;
     return subject.dependencies.every(depId => {
@@ -330,7 +344,6 @@ export default function App() {
             console.error("Error guardando progreso:", error);
         }
       }
-
     } else {
       const missingDeps = subject.dependencies
         .filter(depId => {
@@ -343,7 +356,7 @@ export default function App() {
         })
         .join(', ');
 
-      Alert.alert("Materia Bloqueada 🔒", `Para cursar "${subject.title}" debes aprobar:\n\n• ${missingDeps}`);
+      showAlert("Materia Bloqueada 🔒", `Para cursar "${subject.title}" debes aprobar:\n\n• ${missingDeps}`);
     }
   };
 
@@ -361,6 +374,7 @@ export default function App() {
     return grouped;
   }, [plan]);
 
+  // --- LÓGICA DE HORARIOS ---
   const addToSchedule = async () => {
     const start = parseInt(newStartTime);
     const end = parseInt(newEndTime);
@@ -395,15 +409,13 @@ export default function App() {
             console.error("Error guardando horario:", error);
         }
       }
-
     } else {
-      Alert.alert("Datos incompletos", "Por favor, selecciona una materia, un día y un horario válido (ej: 8 a 10).");
+      showAlert("Datos incompletos", "Por favor, selecciona una materia, un día y un horario válido (ej: 8 a 10).");
     }
   };
 
   const removeScheduleItem = async (id) => {
     const updatedHorarios = horarios.filter(item => item.id !== id);
-    
     setHorarios(updatedHorarios);
 
     if (auth.currentUser) {
@@ -420,7 +432,7 @@ export default function App() {
   const DynamicBackground = theme.Background;
 
   // ==========================================
-  // PANTALLAS (VISTAS)
+  // RENDERIZADO: PANTALLA DE LOGIN
   // ==========================================
   if (!isAuthenticated) {
     return (
@@ -435,7 +447,6 @@ export default function App() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
-              {/* Título en la parte superior */}
               <View style={[styles.logoContainer, { marginTop: 20 }]}>
                 <Ionicons name={theme.iconHeader} size={65} color={theme.primary} style={{marginBottom: 10}} />
                 <Text style={[styles.authTitleLine1, { textShadowColor: theme.bgLight }]}>UNIVERSO</Text>
@@ -443,14 +454,11 @@ export default function App() {
                 <Text style={[styles.authSubtitle, { color: theme.primary }]}>La facultad en tu bolsillo.</Text>
               </View>
 
-              {/* Formulario empujado hacia abajo */}
               <View style={[styles.glassCard, { borderColor: theme.bgLight, marginBottom: 20 }]}>
-                
                 <Text style={styles.authModeTitle}>
                   {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta Nueva'}
                 </Text>
 
-                {/* Inputs unificados y más compactos */}
                 <View style={styles.unifiedInputContainer}>
                   <Ionicons name="mail" size={20} color={theme.primary} style={styles.inputIcon} />
                   <TextInput style={styles.unifiedInput} placeholder="alumno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none"/>
@@ -486,7 +494,6 @@ export default function App() {
                         </>
                       )}
                     </TouchableOpacity>
-                    
                     <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('register'); setUserCareer(''); setPassword(''); }}>
                       <Text style={styles.switchModeText}>¿No tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Regístrate aquí</Text></Text>
                     </TouchableOpacity>
@@ -504,7 +511,6 @@ export default function App() {
                         </>
                       )}
                     </TouchableOpacity>
-
                     <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('login'); setPassword(''); }}>
                       <Text style={styles.switchModeText}>¿Ya tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Inicia sesión</Text></Text>
                     </TouchableOpacity>
@@ -515,7 +521,7 @@ export default function App() {
           </KeyboardAvoidingView>
         </SafeAreaView>
 
-        {/* Modal de Selector de Carrera */}
+        {/* Modal Selección de Carrera */}
         <Modal visible={careerModalVisible} animationType="fade" transparent={true}>
           <View style={styles.modalOverlayDark}>
             <View style={styles.modalContentDark}>
@@ -540,7 +546,7 @@ export default function App() {
           </View>
         </Modal>
 
-        {/* MODAL DE ALERTAS ESTILIZADAS (Glassmorphism) */}
+        {/* Modal Global de Alertas */}
         <Modal visible={customAlert.visible} transparent={true} animationType="fade">
           <View style={styles.modalOverlayDark}>
             <View style={styles.customAlertCard}>
@@ -550,18 +556,15 @@ export default function App() {
               <Text style={styles.alertTitle}>{customAlert.title}</Text>
               <Text style={styles.alertMessage}>{customAlert.message}</Text>
               <View style={styles.alertButtonsRow}>
-                {customAlert.buttons.map((btn, index) => (
-                  <TouchableOpacity 
-                    key={index} 
-                    style={[styles.alertBtn, { backgroundColor: theme.secondary }]} 
-                    onPress={() => {
-                      if(btn.onPress) btn.onPress();
-                      else setCustomAlert(prev => ({...prev, visible: false}));
-                    }}
-                  >
+                {customAlert.buttons ? customAlert.buttons.map((btn, index) => (
+                  <TouchableOpacity key={index} style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => { if(btn.onPress) btn.onPress(); else setCustomAlert({ visible: false, title: '', message: '', buttons: null }); }}>
                     <Text style={styles.alertBtnText}>{btn.text}</Text>
                   </TouchableOpacity>
-                ))}
+                )) : (
+                  <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
+                    <Text style={styles.alertBtnText}>Entendido</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </View>
@@ -570,6 +573,9 @@ export default function App() {
     );
   }
 
+  // ==========================================
+  // RENDERIZADO: INTERFAZ INTERNA (APP)
+  // ==========================================
   const renderPlan = () => (
     <ScrollView style={styles.screenContainer} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
@@ -577,10 +583,7 @@ export default function App() {
           <Text style={[styles.greetingLight, { color: theme.primary }]}>Progreso Académico</Text>
           <Text style={styles.screenTitleLight}>Plan de Estudios</Text>
         </View>
-        <TouchableOpacity 
-          onPress={() => setLogoutModalVisible(true)} 
-          style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}
-        >
+        <TouchableOpacity onPress={() => setLogoutModalVisible(true)} style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}>
           <Ionicons name="log-out" size={20} color="#FCA5A5" />
         </TouchableOpacity>
       </View>
@@ -620,7 +623,6 @@ export default function App() {
                     <Text style={[styles.subjectCodeDark, subject.completed && {color: '#64748B'}, !unlocked && {color: '#475569'}]}>{subject.id}</Text>
                     <Text style={[styles.subjectTextLight, subject.completed && styles.subjectTextCompletedDark, !unlocked && {color: '#64748B'}]}>{subject.title}</Text>
                   </View>
-                  
                   <View style={[styles.checkboxDark, subject.completed && {backgroundColor: theme.secondary, borderColor: theme.secondary}, !unlocked && {borderColor: '#334155', backgroundColor: 'transparent'}]}>
                     {subject.completed && <Ionicons name="checkmark" size={14} color="#FFF" />}
                     {!subject.completed && !unlocked && <Ionicons name="lock-closed" size={12} color="#475569" />}
@@ -678,10 +680,13 @@ export default function App() {
                           key={evento.id} 
                           style={[styles.eventBlock, { top: topPosition, height: blockHeight, backgroundColor: evento.color }]}
                           onLongPress={() => {
-                            Alert.alert(
+                            showAlert(
                               "Eliminar bloque",
                               `¿Quitar ${evento.subject} del horario?`,
-                              [{ text: "Cancelar", style: "cancel" }, { text: "Eliminar", style: "destructive", onPress: () => removeScheduleItem(evento.id) }]
+                              [
+                                { text: "Cancelar", onPress: () => setCustomAlert(prev => ({...prev, visible: false})) }, 
+                                { text: "Eliminar", onPress: () => { removeScheduleItem(evento.id); setCustomAlert(prev => ({...prev, visible: false})); } }
+                              ]
                             );
                           }}
                         >
@@ -790,32 +795,49 @@ export default function App() {
             </View>
             <Text style={[styles.navTextDark, activeTab === 'Plan' && { color: theme.primary, fontWeight: '900' }, {marginTop: 5}]}>Plan</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => Alert.alert("Fase 3", "El Mercado Drive estará disponible en la próxima actualización.")}>
+          <TouchableOpacity style={styles.navItem} onPress={() => showAlert("Fase 3", "El Mercado de Apuntes estará disponible en la próxima actualización.")}>
             <Ionicons name="library-outline" size={26} color="#64748B" />
             <Text style={styles.navTextDark}>Mercado</Text>
           </TouchableOpacity>
         </View>
 
-      {/* MODAL DE CONFIRMACIÓN DE SALIDA */}
+        {/* Modal de Alerta Global para el Interior de la App */}
+        <Modal visible={customAlert.visible} transparent={true} animationType="fade">
+          <View style={styles.modalOverlayDark}>
+            <View style={styles.customAlertCard}>
+              <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
+                <Ionicons name="alert-circle" size={36} color={theme.primary} />
+              </View>
+              <Text style={styles.alertTitle}>{customAlert.title}</Text>
+              <Text style={styles.alertMessage}>{customAlert.message}</Text>
+              <View style={styles.alertButtonsRow}>
+                {customAlert.buttons ? customAlert.buttons.map((btn, index) => (
+                  <TouchableOpacity key={index} style={[styles.alertBtn, { backgroundColor: btn.style === 'destructive' ? '#EF4444' : theme.secondary, marginHorizontal: 5 }]} onPress={() => { if(btn.onPress) btn.onPress(); else setCustomAlert({ visible: false, title: '', message: '', buttons: null }); }}>
+                    <Text style={styles.alertBtnText}>{btn.text}</Text>
+                  </TouchableOpacity>
+                )) : (
+                  <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
+                    <Text style={styles.alertBtnText}>Entendido</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal de Cerrar Sesión */}
         <Modal animationType="fade" transparent={true} visible={logoutModalVisible}>
           <View style={styles.modalOverlayDark}>
             <View style={[styles.modalContentDark, { alignItems: 'center', paddingVertical: 40 }]}>
-              
               <Ionicons name="log-out-outline" size={60} color="#FCA5A5" style={{marginBottom: 20}} />
-              
               <Text style={[styles.modalTitleDark, {textAlign: 'center', marginBottom: 10}]}>¿Cerrar Sesión?</Text>
               <Text style={{color: '#94A3B8', fontSize: 16, textAlign: 'center', marginBottom: 30, paddingHorizontal: 10}}>
                 Tendrás que volver a ingresar tus credenciales para acceder a tus materias y horarios.
               </Text>
-
               <View style={{flexDirection: 'row', justifyContent: 'space-between', width: '100%'}}>
-                <TouchableOpacity 
-                  style={[styles.sheetCancelBtn, {flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.8)', borderRadius: 16, marginRight: 10}]} 
-                  onPress={() => setLogoutModalVisible(false)}
-                >
+                <TouchableOpacity style={[styles.sheetCancelBtn, {flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.8)', borderRadius: 16, marginRight: 10}]} onPress={() => setLogoutModalVisible(false)}>
                   <Text style={styles.sheetCancelText}>Cancelar</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity 
                   style={[styles.sheetSaveBtnDark, {flex: 1, backgroundColor: '#EF4444', marginTop: 0}]} 
                   onPress={() => {
@@ -830,7 +852,6 @@ export default function App() {
                   <Text style={[styles.sheetSaveText, {fontSize: 16}]}>Sí, salir</Text>
                 </TouchableOpacity>
               </View>
-
             </View>
           </View>
         </Modal>
@@ -840,7 +861,9 @@ export default function App() {
   );
 }
 
-// ESTILOS
+// ==========================================
+// 4. ESTILOS BASE
+// ==========================================
 const styles = StyleSheet.create({
   content: { flex: 1 },
   screenContainer: { padding: 24, paddingTop: Platform.OS === 'android' ? 40 : 24 },
@@ -853,17 +876,19 @@ const styles = StyleSheet.create({
   authTitleLine1: { fontSize: 40, fontWeight: '300', color: '#FFF', letterSpacing: 8, marginBottom: -10, textShadowOffset: {width: 0, height: 2}, textShadowRadius: 10 },
   authTitleLine2: { fontSize: 50, fontWeight: '900', color: '#FFF', letterSpacing: 2, textShadowOffset: {width: 0, height: 2}, textShadowRadius: 15 },
   authSubtitle: { fontSize: 14, marginTop: 15, fontWeight: '600', letterSpacing: 0.5, textAlign: 'center' },
+  
   authModeTitle: { fontSize: 20, fontWeight: 'bold', color: '#FFF', marginBottom: 20, textAlign: 'center' },
   switchModeBtn: { marginTop: 20, alignItems: 'center', paddingVertical: 10 },
   switchModeText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
   switchModeTextBold: { fontWeight: '900' },
-  // Inputs unificados (Email, Contraseña y Selector de Carrera)
+  
+  glassCard: { backgroundColor: 'rgba(15, 23, 42, 0.65)', padding: 25, borderRadius: 30, borderWidth: 1 },
+  
   unifiedInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderRadius: 16, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 16 : 12, marginBottom: 15, borderWidth: 1, borderColor: '#334155', minHeight: 55 },
   unifiedInput: { flex: 1, color: '#FFF', fontSize: 16, padding: 0 },
   inputIcon: { marginRight: 12 },
   selectorTextDark: { fontSize: 16, color: '#FFF' },
   
-  // Estilos de la Alerta Personalizada (Modal)
   customAlertCard: { backgroundColor: '#0F172A', borderRadius: 24, padding: 25, width: '90%', alignItems: 'center', borderWidth: 1, borderColor: '#334155', shadowColor: '#000', shadowOffset: {width:0, height: 10}, shadowOpacity: 0.4, shadowRadius: 20, elevation: 10 },
   alertIconBubble: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   alertTitle: { fontSize: 22, fontWeight: '900', color: '#FFF', marginBottom: 10, textAlign: 'center' },
@@ -871,6 +896,7 @@ const styles = StyleSheet.create({
   alertButtonsRow: { flexDirection: 'row', justifyContent: 'center', width: '100%' },
   alertBtn: { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', marginHorizontal: 5 },
   alertBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  
   loginButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderRadius: 16, padding: 18, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 12 },
   loginButtonText: { color: '#FFF', fontSize: 18, fontWeight: '900', marginRight: 10, letterSpacing: 1 },
 
@@ -884,7 +910,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   greetingLight: { fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 },
   screenTitleLight: { fontSize: 34, fontWeight: '900', color: '#FFF', letterSpacing: -0.5, marginTop: 2, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 4 },
-  sectionSubtitleDark: { fontSize: 18, fontWeight: '800', color: '#94A3B8', marginBottom: 15, marginTop: 10 },
   avatarPlaceholderDark: { backgroundColor: 'rgba(30, 41, 59, 0.8)', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, borderWidth: 1 },
 
   progressCardGlass: { borderRadius: 24, padding: 25, marginBottom: 30, borderWidth: 1 },
