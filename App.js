@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  SafeAreaView, StatusBar, TextInput, Modal, KeyboardAvoidingView, Platform,
-  Animated, Dimensions, ActivityIndicator, Easing, Alert, Linking
+  SafeAreaView, TextInput, Modal, KeyboardAvoidingView, Platform,
+  Animated, Dimensions, ActivityIndicator, Easing, Alert, Linking, StatusBar as RNStatusBar
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar'; // Mejor control de la barra superior
+import * as NavigationBar from 'expo-navigation-bar'; // Control de la barra inferior en Android
 import { Ionicons } from '@expo/vector-icons';
-import * as WebBrowser from 'expo-web-browser'; // Navegador interno para Mercado Pago
+import * as WebBrowser from 'expo-web-browser'; 
 
 // === IMPORTACIONES DE FIREBASE ===
 import { auth, db } from './firebaseConfig'; 
@@ -18,14 +20,11 @@ const { width, height } = Dimensions.get('window');
 // 1. CONSTANTES Y CONFIGURACIÓN MANUAL
 // ==========================================
 
-// 💰 APARTADO PARA CAMBIAR PRECIOS MANUALMENTE 💰
-// Escribe el nombre exacto de la carpeta entre comillas y asignale el precio.
 const TABLA_DE_PRECIOS = {
   "Álgebra Lineal y Análisis 2": 10
-  // Agrega todas las carpetas que quieras aquí abajo...
 };
 
-const PRECIO_POR_DEFECTO = 50; // Si una carpeta no está en la tabla de arriba, costará esto.
+const PRECIO_POR_DEFECTO = 50; 
 
 const SPACE_CAREERS = ["Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica"];
 
@@ -169,10 +168,33 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [userCareer, setUserCareer] = useState('');
   const [careerModalVisible, setCareerModalVisible] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   
+  // --- MODO INMERSIVO (Ocultar barras del sistema) ---
+  useEffect(() => {
+    const hideSystemBars = async () => {
+      // 1. Ocultar la barra superior (Hora, batería, señal)
+      RNStatusBar.setHidden(true, 'fade'); // Para iOS y Android viejo
+      
+      // 2. Ocultar la barra de navegación inferior (Botones de Android)
+      if (Platform.OS === 'android') {
+        try {
+          await NavigationBar.setVisibilityAsync("hidden");
+          // Evitar que la barra vuelva a aparecer permanentemente si el usuario toca la pantalla
+          await NavigationBar.setBehaviorAsync("overlay-swipe"); 
+        } catch (error) {
+          console.log("Error ocultando barra de navegación:", error);
+        }
+      }
+    };
+
+    hideSystemBars();
+  }, []);
+  // ---------------------------------------------------
+
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false); 
   const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', buttons: null });
@@ -211,7 +233,6 @@ export default function App() {
     setCustomAlert({ visible: true, title, message, buttons });
   };
 
-  // --- MOTOR DE ORDENAMIENTO ---
   const calcularPesoDeOrden = (titulo) => {
     const t = titulo.toLowerCase();
     if (t.includes('ingreso') || t.includes('matemática preuniversitaria')) return 10;
@@ -227,13 +248,10 @@ export default function App() {
     return 100; 
   };
 
-  // --- MOTOR DE PRECIOS LECTURA DE TABLA ---
   const calcularPrecio = (tituloExacto) => {
-    // Si el nombre exacto de la carpeta está en la tabla, usamos ese precio
     if (TABLA_DE_PRECIOS[tituloExacto] !== undefined) {
       return TABLA_DE_PRECIOS[tituloExacto];
     }
-    // Si no está, devolvemos el valor por defecto
     return PRECIO_POR_DEFECTO;
   };
 
@@ -259,7 +277,7 @@ export default function App() {
                 id: `${doc.id}_pack_${index}`, 
                 title: carpetaPack.name,       
                 category: category,
-                price: calcularPrecio(carpetaPack.name), // Usa la tabla de arriba
+                price: calcularPrecio(carpetaPack.name),
                 icon: category === 'FHOM' ? 'calculator' : 'flask',
                 subjects: subMaterias.length > 0 ? subMaterias : 'Material de estudio y resúmenes',
                 driveTree: carpetaPack         
@@ -480,26 +498,49 @@ export default function App() {
     const start = parseInt(newStartTime);
     const end = parseInt(newEndTime);
 
-    if (newSubject && newDay && start && end && start < end && start >= MIN_HORA && end <= MAX_HORA + 1) {
-      const newHorario = { 
-        id: Math.random().toString(), subject: newSubject.title, code: newSubject.id,
-        day: newDay, start: start, end: end, color: theme.primary 
-      };
+    // 1. Validar que estén todos los datos y que los horarios estén en el rango permitido
+    if (!newSubject || !newDay || isNaN(start) || isNaN(end) || start < MIN_HORA || end > MAX_HORA + 1) {
+      showAlert("Horario Inválido", `Por favor selecciona una materia, un día y horas entre las ${MIN_HORA}:00 y las ${MAX_HORA + 1}:00.`);
+      return;
+    }
 
-      const updatedHorarios = [...horarios, newHorario];
-      setHorarios(updatedHorarios);
-      setScheduleModalVisible(false);
-      setNewSubject(null);
-      setNewStartTime('8');
-      setNewEndTime('10');
-      setSelectedDayTab(newDay);
+    // 2. Validar que la hora de inicio NO sea mayor o igual a la hora de fin
+    if (start >= end) {
+      showAlert("Rango Inválido", "La hora de finalización debe ser mayor a la hora de inicio.\n\nEjemplo válido: Inicio 8, Fin 10.");
+      return;
+    }
 
-      if (auth.currentUser) {
-        try {
-            await setDoc(doc(db, "usuarios", auth.currentUser.uid), { horarios: updatedHorarios }, { merge: true }); 
-        } catch(error) {
-            console.error("Error guardando horario:", error);
-        }
+    // 3. Validar superposición (overlap) de horarios
+    const eventosDelMismoDia = horarios.filter(h => h.day === newDay);
+    const haySuperposicion = eventosDelMismoDia.some(evento => {
+      // Fórmula matemática para detectar si dos rangos de horas se cruzan
+      return (start < evento.end && end > evento.start);
+    });
+
+    if (haySuperposicion) {
+      showAlert("Cruce de Horarios", "Ya tienes una materia asignada en este bloque horario. Por favor, verifica tu grilla y elige otro horario.");
+      return;
+    }
+
+    // Si pasa todas las validaciones, creamos el horario
+    const newHorario = { 
+      id: Math.random().toString(), subject: newSubject.title, code: newSubject.id,
+      day: newDay, start: start, end: end, color: theme.primary 
+    };
+
+    const updatedHorarios = [...horarios, newHorario];
+    setHorarios(updatedHorarios);
+    setScheduleModalVisible(false);
+    setNewSubject(null);
+    setNewStartTime('8');
+    setNewEndTime('10');
+    setSelectedDayTab(newDay);
+
+    if (auth.currentUser) {
+      try {
+          await setDoc(doc(db, "usuarios", auth.currentUser.uid), { horarios: updatedHorarios }, { merge: true }); 
+      } catch(error) {
+          console.error("Error guardando horario:", error);
       }
     }
   };
@@ -517,12 +558,10 @@ export default function App() {
     }
   };
 
-  // --- LÓGICA DE PAGO CON EXPO WEB BROWSER ---
   const procesarCompra = async (pack) => {
     setIsProcessingPayment(true); 
     
     try {
-      // ⚠️ IMPORTANTE: Aquí está tu IP. Asegúrate de que siga siendo la misma en tu PC.
       const SERVER_URL = "http://192.168.0.32:3000/crear_preferencia"; 
       
       const response = await fetch(SERVER_URL, {
@@ -531,7 +570,7 @@ export default function App() {
         body: JSON.stringify({ 
           title: pack.title, 
           price: pack.price,
-          packId: pack.id,                         
+          packId: pack.id,                                 
           userId: auth.currentUser?.uid || 'anon' 
         })
       });
@@ -539,15 +578,9 @@ export default function App() {
       const data = await response.json();
 
       if (data.init_point) {
-        
-        // ABRIR EL NAVEGADOR INTERNO DE LA APP
         await WebBrowser.openBrowserAsync(data.init_point);
-        
-        // Cuando vuelve del navegador, le avisamos que estamos esperando la confirmación de MP.
-        // Ya no regalamos el apunte temporalmente. Dejamos que el Webhook en el servidor haga su magia.
         setIsProcessingPayment(false); 
         showAlert("Verificando pago...", "Si tu pago fue aprobado por Mercado Pago, tu apunte aparecerá en la sección 'Mis Apuntes' en los próximos minutos.\n\nPuedes salir y volver a entrar a la app para actualizar.");
-
       } else {
         showAlert("Error de Servidor", "No se pudo generar el link de pago.");
         setIsProcessingPayment(false);
@@ -560,126 +593,21 @@ export default function App() {
     } 
   };
 
-  const DynamicBackground = theme.Background;
+  const renderDriveNode = (node) => {
+    if (node.type === 'file') {
+      if (node.url) {
+        Linking.openURL(node.url).catch(err => showAlert("Error", "No se pudo abrir el enlace del archivo."));
+      } else {
+        showAlert("Aviso", "Este archivo aún no tiene un enlace vinculado.");
+      }
+      return;
+    }
+    setDrivePath([...drivePath, node]);
+  };
 
-  if (!isAuthenticated) {
-    return (
-      <View style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" backgroundColor={isSpaceTheme ? '#050519' : '#022C22'} />
-        <DynamicBackground />
-        <SafeAreaView style={{ flex: 1 }}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'space-between', paddingHorizontal: 30, paddingVertical: Platform.OS === 'android' ? 60 : 40 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <View style={[styles.logoContainer, { marginTop: 20 }]}>
-                <Ionicons name={theme.iconHeader} size={65} color={theme.primary} style={{marginBottom: 10}} />
-                <Text style={[styles.authTitleLine1, { textShadowColor: theme.bgLight }]}>UNIVERSO</Text>
-                <Text style={[styles.authTitleLine2, { textShadowColor: theme.bgLight }]}>EXACTAS</Text>
-                <Text style={[styles.authSubtitle, { color: theme.primary }]}>La facultad en tu bolsillo.</Text>
-              </View>
-
-              <View style={[styles.glassCard, { borderColor: theme.bgLight, marginBottom: 20 }]}>
-                <Text style={styles.authModeTitle}>{authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta Nueva'}</Text>
-                
-                <View style={styles.unifiedInputContainer}>
-                  <Ionicons name="mail" size={20} color={theme.primary} style={styles.inputIcon} />
-                  <TextInput style={styles.unifiedInput} placeholder="alumno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none"/>
-                </View>
-                
-                <View style={styles.unifiedInputContainer}>
-                  <Ionicons name="lock-closed" size={20} color={theme.primary} style={styles.inputIcon} />
-                  <TextInput style={styles.unifiedInput} placeholder="Contraseña" placeholderTextColor="#64748B" secureTextEntry value={password} onChangeText={setPassword}/>
-                </View>
-
-                {authMode === 'register' && (
-                  <TouchableOpacity style={styles.unifiedInputContainer} onPress={() => setCareerModalVisible(true)}>
-                    <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
-                      <Ionicons name="school" size={20} color={theme.primary} style={styles.inputIcon} />
-                      <Text style={[styles.selectorTextDark, !userCareer && {color: '#64748B'}]} numberOfLines={1}>
-                        {userCareer ? userCareer : "Selecciona tu carrera..."}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-down" size={20} color="#64748B" />
-                  </TouchableOpacity>
-                )}
-
-                {authMode === 'login' ? (
-                  <>
-                    <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={handleLogin} activeOpacity={0.8} disabled={isLoading}>
-                      {isLoading ? <ActivityIndicator color="#FFF" size="small" /> : (
-                        <><Text style={styles.loginButtonText}>Entrar</Text><Ionicons name="log-in-outline" size={20} color="#FFF" /></>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('register'); setUserCareer(''); setPassword(''); }}>
-                      <Text style={styles.switchModeText}>¿No tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Regístrate aquí</Text></Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <>
-                    <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]} onPress={handleRegister} activeOpacity={0.8} disabled={isLoading}>
-                      {isLoading ? <ActivityIndicator color="#FFF" size="small" /> : (
-                        <><Text style={styles.loginButtonText}>Registrarme</Text><Ionicons name="person-add-outline" size={20} color="#FFF" /></>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('login'); setPassword(''); }}>
-                      <Text style={styles.switchModeText}>¿Ya tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Inicia sesión</Text></Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
-
-        <Modal visible={careerModalVisible} animationType="fade" transparent={true}>
-          <View style={styles.modalOverlayDark}>
-            <View style={styles.modalContentDark}>
-              <View style={styles.modalHeaderDark}>
-                <Text style={styles.modalTitleDark}>Departamentos UNLP</Text>
-                <TouchableOpacity onPress={() => setCareerModalVisible(false)}>
-                  <Ionicons name="close-circle" size={32} color="#475569" />
-                </TouchableOpacity>
-              </View>
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {CARRERAS.map((carrera, index) => {
-                  const isSpace = SPACE_CAREERS.includes(carrera);
-                  return (
-                    <TouchableOpacity key={index} style={styles.careerOptionDark} onPress={() => { setUserCareer(carrera); setCareerModalVisible(false); }}>
-                      <Text style={[styles.careerOptionTextDark, userCareer === carrera && {color: theme.primary, fontWeight: 'bold'}]}>{carrera}</Text>
-                      {userCareer === carrera && <Ionicons name={isSpace ? "planet" : "flask"} size={24} color={theme.primary} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
-
-        <Modal visible={customAlert.visible} transparent={true} animationType="fade">
-          <View style={styles.modalOverlayDark}>
-            <View style={styles.customAlertCard}>
-              <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
-                <Ionicons name="alert-circle" size={36} color={theme.primary} />
-              </View>
-              <Text style={styles.alertTitle}>{customAlert.title}</Text>
-              <Text style={styles.alertMessage}>{customAlert.message}</Text>
-              <View style={styles.alertButtonsRow}>
-                {customAlert.buttons ? customAlert.buttons.map((btn, index) => (
-                  <TouchableOpacity key={index} style={[styles.alertBtn, { backgroundColor: btn.style === 'destructive' ? '#EF4444' : btn.style === 'cancel' ? '#334155' : theme.secondary, marginHorizontal: 5 }]} onPress={() => { if(btn.onPress) btn.onPress(); else setCustomAlert({ visible: false, title: '', message: '', buttons: null }); }}>
-                    <Text style={styles.alertBtnText}>{btn.text}</Text>
-                  </TouchableOpacity>
-                )) : (
-                  <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
-                    <Text style={styles.alertBtnText}>Entendido</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-      </View>
-    );
-  }
+  const handleBackDrive = () => {
+    setDrivePath(drivePath.slice(0, -1));
+  };
 
   const renderPlan = () => (
     <ScrollView style={styles.screenContainer} showsVerticalScrollIndicator={false}>
@@ -787,61 +715,66 @@ export default function App() {
       </TouchableOpacity>
 
       <Modal animationType="slide" transparent={true} visible={scheduleModalVisible}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlayDark}>
-          <View style={styles.modalSheetDark}>
-            <View style={styles.sheetHandleDark} />
-            <Text style={styles.sheetTitleLight}>Vincular Materia</Text>
-            <Text style={styles.sheetLabelDark}>Materias disponibles para cursar:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 25, maxHeight: 50}}>
-              {availableSubjects.length > 0 ? availableSubjects.map(s => (
-                <TouchableOpacity key={s.id} style={[styles.subjectChip, newSubject?.id === s.id && {backgroundColor: theme.primary, borderColor: theme.primary}]} onPress={() => setNewSubject(s)}>
-                  <Text style={[styles.subjectChipText, newSubject?.id === s.id && {color: '#FFF', fontWeight: 'bold'}]}>{s.title}</Text>
-                </TouchableOpacity>
-              )) : (<Text style={{color: '#64748B', alignSelf: 'center', fontStyle: 'italic', marginTop: 10}}>No hay materias desbloqueadas.</Text>)}
-            </ScrollView>
-            <Text style={styles.sheetLabelDark}>Día de la semana:</Text>
-            <View style={styles.daysRow}>
-              {DIAS_SEMANA.map(d => (
-                <TouchableOpacity key={d} style={[styles.dayQuickBtn, newDay === d && {backgroundColor: theme.primary, borderColor: theme.primary}]} onPress={() => setNewDay(d)}>
-                  <Text style={[styles.dayQuickBtnText, newDay === d && {color: '#FFF', fontWeight: 'bold'}]}>{d.substring(0, 3)}</Text>
-                </TouchableOpacity>
-              ))}
+        {/* Envolvemos todo en un View flex: 1 para poder superponer la alerta */}
+        <View style={{ flex: 1 }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlayDark}>
+            <View style={styles.modalSheetDark}>
+              <View style={styles.sheetHandleDark} />
+              <Text style={styles.sheetTitleLight}>Vincular Materia</Text>
+              <Text style={styles.sheetLabelDark}>Materias disponibles para cursar:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 25, maxHeight: 50}}>
+                {availableSubjects.length > 0 ? availableSubjects.map(s => (
+                  <TouchableOpacity key={s.id} style={[styles.subjectChip, newSubject?.id === s.id && {backgroundColor: theme.primary, borderColor: theme.primary}]} onPress={() => setNewSubject(s)}>
+                    <Text style={[styles.subjectChipText, newSubject?.id === s.id && {color: '#FFF', fontWeight: 'bold'}]}>{s.title}</Text>
+                  </TouchableOpacity>
+                )) : (<Text style={{color: '#64748B', alignSelf: 'center', fontStyle: 'italic', marginTop: 10}}>No hay materias desbloqueadas.</Text>)}
+              </ScrollView>
+              <Text style={styles.sheetLabelDark}>Día de la semana:</Text>
+              <View style={styles.daysRow}>
+                {DIAS_SEMANA.map(d => (
+                  <TouchableOpacity key={d} style={[styles.dayQuickBtn, newDay === d && {backgroundColor: theme.primary, borderColor: theme.primary}]} onPress={() => setNewDay(d)}>
+                    <Text style={[styles.dayQuickBtnText, newDay === d && {color: '#FFF', fontWeight: 'bold'}]}>{d.substring(0, 3)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.sheetInputGroup}>
+                <Text style={styles.sheetLabelDark}>Rango Horario (Ej: 8 a 12):</Text>
+                <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
+                  <TextInput style={[styles.sheetInputDark, {flex: 1, textAlign: 'center'}]} placeholder="Inicio" placeholderTextColor="#64748B" keyboardType="numeric" value={newStartTime} onChangeText={setNewStartTime} />
+                  <Text style={{color: '#94A3B8', paddingHorizontal: 15, fontWeight: 'bold'}}>hasta</Text>
+                  <TextInput style={[styles.sheetInputDark, {flex: 1, textAlign: 'center'}]} placeholder="Fin" placeholderTextColor="#64748B" keyboardType="numeric" value={newEndTime} onChangeText={setNewEndTime} />
+                </View>
+              </View>
+              <TouchableOpacity style={[styles.sheetSaveBtnDark, { backgroundColor: theme.secondary }]} onPress={addToSchedule}>
+                <Text style={styles.sheetSaveText}>Agregar al Calendario</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setScheduleModalVisible(false)}>
+                <Text style={styles.sheetCancelText}>Cancelar</Text>
+              </TouchableOpacity>
             </View>
-            <View style={styles.sheetInputGroup}>
-              <Text style={styles.sheetLabelDark}>Rango Horario (Ej: 8 a 12):</Text>
-              <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
-                <TextInput style={[styles.sheetInputDark, {flex: 1, textAlign: 'center'}]} placeholder="Inicio" placeholderTextColor="#64748B" keyboardType="numeric" value={newStartTime} onChangeText={setNewStartTime} />
-                <Text style={{color: '#94A3B8', paddingHorizontal: 15, fontWeight: 'bold'}}>hasta</Text>
-                <TextInput style={[styles.sheetInputDark, {flex: 1, textAlign: 'center'}]} placeholder="Fin" placeholderTextColor="#64748B" keyboardType="numeric" value={newEndTime} onChangeText={setNewEndTime} />
+          </KeyboardAvoidingView>
+
+          {/* EL TRUCO: Dibujamos la alerta AQUÍ ADENTRO con posición absoluta para tapar el formulario */}
+          {customAlert.visible && (
+            <View style={[styles.modalOverlayDark, StyleSheet.absoluteFill, { zIndex: 9999, elevation: 9999, justifyContent: 'center', alignItems: 'center' }]}>
+              <View style={styles.customAlertCard}>
+                <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
+                  <Ionicons name="alert-circle" size={36} color={theme.primary} />
+                </View>
+                <Text style={styles.alertTitle}>{customAlert.title}</Text>
+                <Text style={styles.alertMessage}>{customAlert.message}</Text>
+                <View style={styles.alertButtonsRow}>
+                  <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
+                    <Text style={styles.alertBtnText}>Entendido</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-            <TouchableOpacity style={[styles.sheetSaveBtnDark, { backgroundColor: theme.secondary }]} onPress={addToSchedule}>
-              <Text style={styles.sheetSaveText}>Agregar al Calendario</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setScheduleModalVisible(false)}>
-              <Text style={styles.sheetCancelText}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+          )}
+        </View>
       </Modal>
     </View>
   );
-
-  const renderDriveNode = (node) => {
-    if (node.type === 'file') {
-      if (node.url) {
-        Linking.openURL(node.url).catch(err => showAlert("Error", "No se pudo abrir el enlace del archivo."));
-      } else {
-        showAlert("Aviso", "Este archivo aún no tiene un enlace vinculado.");
-      }
-      return;
-    }
-    setDrivePath([...drivePath, node]);
-  };
-
-  const handleBackDrive = () => {
-    setDrivePath(drivePath.slice(0, -1));
-  };
 
   const renderMercado = () => {
     if (isStoreLoading) {
@@ -939,7 +872,6 @@ export default function App() {
                 ))}
               </View>
 
-              {/* SPINNER NUEVO */}
               {isProcessingPayment && (
                 <View style={{ backgroundColor: theme.secondary+'30', padding: 15, borderRadius: 15, marginBottom: 15, flexDirection: 'row', alignItems: 'center' }}>
                   <ActivityIndicator color={theme.primary} style={{marginRight: 10}}/>
@@ -1015,73 +947,174 @@ export default function App() {
     );
   };
 
+  const DynamicBackground = theme.Background;
+
   return (
     <View style={{ flex: 1, backgroundColor: isSpaceTheme ? '#050519' : '#022C22' }}>
-      <StatusBar barStyle="light-content" backgroundColor={isSpaceTheme ? '#050519' : '#022C22'} />
+      <StatusBar hidden={true} />
       <DynamicBackground />
 
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={styles.content}>
-          {activeTab === 'Plan' && renderPlan()}
-          {activeTab === 'Horarios' && renderHorarios()}
-          {activeTab === 'Mercado' && renderMercado()}
-        </View>
-
-        <View style={styles.bottomNavDark}>
-          <TouchableOpacity style={styles.navItem} onPress={() => { setActiveTab('Horarios'); setDrivePath([]); }}>
-            <Ionicons name={activeTab === 'Horarios' ? "time" : "time-outline"} size={26} color={activeTab === 'Horarios' ? theme.primary : "#64748B"} />
-            <Text style={[styles.navTextDark, activeTab === 'Horarios' && { color: theme.primary, fontWeight: '900' }]}>Horarios</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => { setActiveTab('Plan'); setDrivePath([]); }}>
-            <View style={[styles.navCenterBtnDark, activeTab === 'Plan' && { backgroundColor: theme.secondary, shadowColor: theme.primary, borderColor: theme.primary, elevation: 6 }]}>
-              <Ionicons name="git-network" size={28} color={activeTab === 'Plan' ? "#FFF" : "#94A3B8"} />
-            </View>
-            <Text style={[styles.navTextDark, activeTab === 'Plan' && { color: theme.primary, fontWeight: '900' }, {marginTop: 5}]}>Plan</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Mercado')}>
-            <Ionicons name={activeTab === 'Mercado' ? "library" : "library-outline"} size={26} color={activeTab === 'Mercado' ? theme.primary : "#64748B"} />
-            <Text style={[styles.navTextDark, activeTab === 'Mercado' && { color: theme.primary, fontWeight: '900' }]}>Apuntes</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-
-        <Modal visible={customAlert.visible} transparent={true} animationType="fade">
-          <View style={styles.modalOverlayDark}>
-            <View style={styles.customAlertCard}>
-              <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
-                <Ionicons name="alert-circle" size={36} color={theme.primary} />
+      {!isAuthenticated ? (
+        <SafeAreaView style={{ flex: 1 }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'space-between', paddingHorizontal: 30, paddingVertical: Platform.OS === 'android' ? 60 : 40 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={[styles.logoContainer, { marginTop: 20 }]}>
+                <Ionicons name={theme.iconHeader} size={65} color={theme.primary} style={{marginBottom: 10}} />
+                <Text style={[styles.authTitleLine1, { textShadowColor: theme.bgLight }]}>UNIVERSO</Text>
+                <Text style={[styles.authTitleLine2, { textShadowColor: theme.bgLight }]}>EXACTAS</Text>
+                <Text style={[styles.authSubtitle, { color: theme.primary }]}>La facultad en tu bolsillo.</Text>
               </View>
-              <Text style={styles.alertTitle}>{customAlert.title}</Text>
-              <Text style={styles.alertMessage}>{customAlert.message}</Text>
-              <View style={styles.alertButtonsRow}>
-                {customAlert.buttons ? customAlert.buttons.map((btn, index) => (
-                  <TouchableOpacity key={index} style={[styles.alertBtn, { backgroundColor: btn.style === 'destructive' ? '#EF4444' : btn.style === 'cancel' ? '#334155' : theme.secondary, marginHorizontal: 5 }]} onPress={() => { if(btn.onPress) btn.onPress(); else setCustomAlert({ visible: false, title: '', message: '', buttons: null }); }}>
-                    <Text style={styles.alertBtnText}>{btn.text}</Text>
+
+              <View style={[styles.glassCard, { borderColor: theme.bgLight, marginBottom: 20 }]}>
+                <Text style={styles.authModeTitle}>{authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta Nueva'}</Text>
+                
+                <View style={styles.unifiedInputContainer}>
+                  <Ionicons name="mail" size={20} color={theme.primary} style={styles.inputIcon} />
+                  <TextInput style={styles.unifiedInput} placeholder="alumno@exactas.unlp.edu.ar" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none"/>
+                </View>
+                
+                <View style={styles.unifiedInputContainer}>
+                  <Ionicons name="lock-closed" size={20} color={theme.primary} style={styles.inputIcon} />
+                  <TextInput 
+                    style={styles.unifiedInput} 
+                    placeholder="Contraseña" 
+                    placeholderTextColor="#64748B" 
+                    secureTextEntry={!showPassword} 
+                    value={password} 
+                    onChangeText={setPassword}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                    <Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color="#64748B" />
                   </TouchableOpacity>
-                )) : (
-                  <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
-                    <Text style={styles.alertBtnText}>Entendido</Text>
+                </View>
+
+                {authMode === 'register' && (
+                  <TouchableOpacity style={styles.unifiedInputContainer} onPress={() => setCareerModalVisible(true)}>
+                    <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
+                      <Ionicons name="school" size={20} color={theme.primary} style={styles.inputIcon} />
+                      <Text style={[styles.selectorTextDark, !userCareer && {color: '#64748B'}]} numberOfLines={1}>
+                        {userCareer ? userCareer : "Selecciona tu carrera..."}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-down" size={20} color="#64748B" />
                   </TouchableOpacity>
                 )}
-              </View>
-            </View>
-          </View>
-        </Modal>
 
-        <Modal animationType="fade" transparent={true} visible={logoutModalVisible}>
-          <View style={styles.modalOverlayDark}>
-            <View style={[styles.modalContentDark, { alignItems: 'center', paddingVertical: 40 }]}>
-              <Ionicons name="log-out-outline" size={60} color="#FCA5A5" style={{marginBottom: 20}} />
-              <Text style={[styles.modalTitleDark, {textAlign: 'center', marginBottom: 10}]}>¿Cerrar Sesión?</Text>
-              <Text style={{color: '#94A3B8', fontSize: 16, textAlign: 'center', marginBottom: 30, paddingHorizontal: 10}}>Tendrás que volver a ingresar tus credenciales para acceder a tus materias y horarios.</Text>
-              <View style={{flexDirection: 'row', justifyContent: 'space-between', width: '100%'}}>
-                <TouchableOpacity style={[styles.sheetCancelBtn, {flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.8)', borderRadius: 16, marginRight: 10}]} onPress={() => setLogoutModalVisible(false)}><Text style={styles.sheetCancelText}>Cancelar</Text></TouchableOpacity>
-                <TouchableOpacity style={[styles.sheetSaveBtnDark, {flex: 1, backgroundColor: '#EF4444', marginTop: 0}]} onPress={() => { handleLogout(); setLogoutModalVisible(false); }}><Text style={[styles.sheetSaveText, {fontSize: 16}]}>Sí, salir</Text></TouchableOpacity>
+                {authMode === 'login' ? (
+                  <>
+                    <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={handleLogin} activeOpacity={0.8} disabled={isLoading}>
+                      {isLoading ? <ActivityIndicator color="#FFF" size="small" /> : (
+                        <><Text style={styles.loginButtonText}>Entrar</Text><Ionicons name="log-in-outline" size={20} color="#FFF" /></>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('register'); setUserCareer(''); setPassword(''); }}>
+                      <Text style={styles.switchModeText}>¿No tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Regístrate aquí</Text></Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]} onPress={handleRegister} activeOpacity={0.8} disabled={isLoading}>
+                      {isLoading ? <ActivityIndicator color="#FFF" size="small" /> : (
+                        <><Text style={styles.loginButtonText}>Registrarme</Text><Ionicons name="person-add-outline" size={20} color="#FFF" /></>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.switchModeBtn} onPress={() => { setAuthMode('login'); setPassword(''); }}>
+                      <Text style={styles.switchModeText}>¿Ya tienes cuenta? <Text style={[styles.switchModeTextBold, {color: theme.primary}]}>Inicia sesión</Text></Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      ) : (
+        <SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.content}>
+            {activeTab === 'Plan' && renderPlan()}
+            {activeTab === 'Horarios' && renderHorarios()}
+            {activeTab === 'Mercado' && renderMercado()}
+          </View>
+
+          <View style={styles.bottomNavDark}>
+            <TouchableOpacity style={styles.navItem} onPress={() => { setActiveTab('Horarios'); setDrivePath([]); }}>
+              <Ionicons name={activeTab === 'Horarios' ? "time" : "time-outline"} size={26} color={activeTab === 'Horarios' ? theme.primary : "#64748B"} />
+              <Text style={[styles.navTextDark, activeTab === 'Horarios' && { color: theme.primary, fontWeight: '900' }]}>Horarios</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navItem} onPress={() => { setActiveTab('Plan'); setDrivePath([]); }}>
+              <View style={[styles.navCenterBtnDark, activeTab === 'Plan' && { backgroundColor: theme.secondary, shadowColor: theme.primary, borderColor: theme.primary, elevation: 6 }]}>
+                <Ionicons name="git-network" size={28} color={activeTab === 'Plan' ? "#FFF" : "#94A3B8"} />
+              </View>
+              <Text style={[styles.navTextDark, activeTab === 'Plan' && { color: theme.primary, fontWeight: '900' }, {marginTop: 5}]}>Plan</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Mercado')}>
+              <Ionicons name={activeTab === 'Mercado' ? "library" : "library-outline"} size={26} color={activeTab === 'Mercado' ? theme.primary : "#64748B"} />
+              <Text style={[styles.navTextDark, activeTab === 'Mercado' && { color: theme.primary, fontWeight: '900' }]}>Apuntes</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      )}
+
+      {/* MODALES GLOBALES */}
+      <Modal visible={careerModalVisible} animationType="fade" transparent={true}>
+        <View style={styles.modalOverlayDark}>
+          <View style={styles.modalContentDark}>
+            <View style={styles.modalHeaderDark}>
+              <Text style={styles.modalTitleDark}>Departamentos UNLP</Text>
+              <TouchableOpacity onPress={() => setCareerModalVisible(false)}>
+                <Ionicons name="close-circle" size={32} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {CARRERAS.map((carrera, index) => {
+                const isSpace = SPACE_CAREERS.includes(carrera);
+                return (
+                  <TouchableOpacity key={index} style={styles.careerOptionDark} onPress={() => { setUserCareer(carrera); setCareerModalVisible(false); }}>
+                    <Text style={[styles.careerOptionTextDark, userCareer === carrera && {color: theme.primary, fontWeight: 'bold'}]}>{carrera}</Text>
+                    {userCareer === carrera && <Ionicons name={isSpace ? "planet" : "flask"} size={24} color={theme.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+        <Modal visible={customAlert.visible && !scheduleModalVisible} transparent={true} animationType="fade">        <View style={styles.modalOverlayDark}>
+          <View style={styles.customAlertCard}>
+            <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
+              <Ionicons name="alert-circle" size={36} color={theme.primary} />
+            </View>
+            <Text style={styles.alertTitle}>{customAlert.title}</Text>
+            <Text style={styles.alertMessage}>{customAlert.message}</Text>
+            <View style={styles.alertButtonsRow}>
+              {customAlert.buttons ? customAlert.buttons.map((btn, index) => (
+                <TouchableOpacity key={index} style={[styles.alertBtn, { backgroundColor: btn.style === 'destructive' ? '#EF4444' : btn.style === 'cancel' ? '#334155' : theme.secondary, marginHorizontal: 5 }]} onPress={() => { if(btn.onPress) btn.onPress(); else setCustomAlert({ visible: false, title: '', message: '', buttons: null }); }}>
+                  <Text style={styles.alertBtnText}>{btn.text}</Text>
+                </TouchableOpacity>
+              )) : (
+                <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
+                  <Text style={styles.alertBtnText}>Entendido</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
-        </Modal>
-      </SafeAreaView>
+        </View>
+      </Modal>
+
+      <Modal animationType="fade" transparent={true} visible={logoutModalVisible}>
+        <View style={styles.modalOverlayDark}>
+          <View style={[styles.modalContentDark, { alignItems: 'center', paddingVertical: 40 }]}>
+            <Ionicons name="log-out-outline" size={60} color="#FCA5A5" style={{marginBottom: 20}} />
+            <Text style={[styles.modalTitleDark, {textAlign: 'center', marginBottom: 10}]}>¿Cerrar Sesión?</Text>
+            <Text style={{color: '#94A3B8', fontSize: 16, textAlign: 'center', marginBottom: 30, paddingHorizontal: 10}}>Tendrás que volver a ingresar tus credenciales para acceder a tus materias y horarios.</Text>
+            <View style={{flexDirection: 'row', justifyContent: 'space-between', width: '100%'}}>
+              <TouchableOpacity style={[styles.sheetCancelBtn, {flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.8)', borderRadius: 16, marginRight: 10}]} onPress={() => setLogoutModalVisible(false)}><Text style={styles.sheetCancelText}>Cancelar</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.sheetSaveBtnDark, {flex: 1, backgroundColor: '#EF4444', marginTop: 0}]} onPress={() => { handleLogout(); setLogoutModalVisible(false); }}><Text style={[styles.sheetSaveText, {fontSize: 16}]}>Sí, salir</Text></TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -1092,22 +1125,28 @@ export default function App() {
 const styles = StyleSheet.create({
   content: { flex: 1 },
   screenContainer: { padding: 24, paddingTop: Platform.OS === 'android' ? 40 : 24 },
+  
   nebula: { position: 'absolute', width: 300, height: 300, borderRadius: 150, opacity: 0.25, filter: 'blur(60px)' },
   shootingStar: { position: 'absolute', width: 100, height: 2, backgroundColor: '#FFF', borderRadius: 2, shadowColor: '#FFF', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 10 },
+  
   authContent: { flex: 1, justifyContent: 'center', paddingHorizontal: 30 },
   logoContainer: { alignItems: 'center', marginBottom: 50 },
   authTitleLine1: { fontSize: 40, fontWeight: '300', color: '#FFF', letterSpacing: 8, marginBottom: -10, textShadowOffset: {width: 0, height: 2}, textShadowRadius: 10 },
   authTitleLine2: { fontSize: 50, fontWeight: '900', color: '#FFF', letterSpacing: 2, textShadowOffset: {width: 0, height: 2}, textShadowRadius: 15 },
   authSubtitle: { fontSize: 14, marginTop: 15, fontWeight: '600', letterSpacing: 0.5, textAlign: 'center' },
+  
   authModeTitle: { fontSize: 20, fontWeight: 'bold', color: '#FFF', marginBottom: 20, textAlign: 'center' },
   switchModeBtn: { marginTop: 20, alignItems: 'center', paddingVertical: 10 },
   switchModeText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
   switchModeTextBold: { fontWeight: '900' },
+  
   glassCard: { backgroundColor: 'rgba(15, 23, 42, 0.65)', padding: 25, borderRadius: 30, borderWidth: 1 },
+  
   unifiedInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderRadius: 16, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 16 : 12, marginBottom: 15, borderWidth: 1, borderColor: '#334155', minHeight: 55 },
   unifiedInput: { flex: 1, color: '#FFF', fontSize: 16, padding: 0 },
   inputIcon: { marginRight: 12 },
   selectorTextDark: { fontSize: 16, color: '#FFF' },
+  
   customAlertCard: { backgroundColor: '#0F172A', borderRadius: 24, padding: 25, width: '90%', alignItems: 'center', borderWidth: 1, borderColor: '#334155', shadowColor: '#000', shadowOffset: {width:0, height: 10}, shadowOpacity: 0.4, shadowRadius: 20, elevation: 10 },
   alertIconBubble: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   alertTitle: { fontSize: 22, fontWeight: '900', color: '#FFF', marginBottom: 10, textAlign: 'center' },
@@ -1115,18 +1154,22 @@ const styles = StyleSheet.create({
   alertButtonsRow: { flexDirection: 'row', justifyContent: 'center', width: '100%' },
   alertBtn: { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', marginHorizontal: 5 },
   alertBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  
   loginButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderRadius: 16, padding: 18, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 12 },
   loginButtonText: { color: '#FFF', fontSize: 18, fontWeight: '900', marginRight: 10, letterSpacing: 1 },
+
   modalOverlayDark: { flex: 1, backgroundColor: 'rgba(5, 5, 25, 0.85)', justifyContent: 'center', padding: 20 },
   modalContentDark: { backgroundColor: '#0F172A', borderRadius: 30, padding: 25, maxHeight: '80%', borderWidth: 1, borderColor: '#334155' },
   modalHeaderDark: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitleDark: { fontSize: 24, fontWeight: 'bold', color: '#FFF' },
   careerOptionDark: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   careerOptionTextDark: { fontSize: 16, color: '#CBD5E1' },
+
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   greetingLight: { fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 },
   screenTitleLight: { fontSize: 34, fontWeight: '900', color: '#FFF', letterSpacing: -0.5, marginTop: 2, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 4 },
   avatarPlaceholderDark: { backgroundColor: 'rgba(30, 41, 59, 0.8)', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, borderWidth: 1 },
+
   progressCardGlass: { borderRadius: 24, padding: 25, marginBottom: 30, borderWidth: 1 },
   progressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   progressTitleLight: { color: '#FFF', fontSize: 20, fontWeight: '900' },
@@ -1135,6 +1178,7 @@ const styles = StyleSheet.create({
   progressPercentageLight: { color: '#FFF', fontSize: 22, fontWeight: '900' },
   progressBarBgDark: { height: 8, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 4 },
   progressBarFillLight: { height: '100%', borderRadius: 4, shadowOffset: {width: 0, height: 0}, shadowOpacity: 0.8, shadowRadius: 10 },
+  
   yearSectionGlass: { marginBottom: 20, backgroundColor: 'rgba(15, 23, 42, 0.65)', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   yearHeaderDark: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)', paddingBottom: 10 },
   yearTitleLight: { fontSize: 18, fontWeight: '900', color: '#E2E8F0' },
@@ -1145,21 +1189,28 @@ const styles = StyleSheet.create({
   subjectTextLight: { fontSize: 16, fontWeight: '700', color: '#F8FAFC' },
   subjectTextCompletedDark: { textDecorationLine: 'line-through', color: '#64748B' },
   checkboxDark: { width: 26, height: 26, borderRadius: 8, borderWidth: 2, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' },
+
   gridContainer: { flexDirection: 'row', marginTop: 10, paddingBottom: 20 },
   timeColumn: { width: 50, marginRight: 5 },
   emptyCorner: { height: 40, marginBottom: 10 },
   timeLabelContainer: { height: 60, justifyContent: 'flex-start', alignItems: 'center' }, 
   timeLabelText: { color: '#64748B', fontSize: 12, fontWeight: '700', marginTop: -8 }, 
+  
   dayColumn: { width: 110, marginRight: 5 },
   dayColHeader: { height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#334155' },
   dayColHeaderText: { color: '#E2E8F0', fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase' },
+  
   dayColBody: { position: 'relative', flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', overflow: 'hidden' },
   gridLine: { height: 60, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
+  
   eventBlock: { position: 'absolute', left: 2, right: 2, borderRadius: 8, padding: 6, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.5, shadowRadius: 4, elevation: 4 },
   eventBlockCode: { color: 'rgba(255,255,255,0.8)', fontSize: 10, fontWeight: '900', marginBottom: 2 },
   eventBlockTitle: { color: '#FFF', fontSize: 11, fontWeight: '700', lineHeight: 14 },
+  
   hintText: { color: '#64748B', textAlign: 'center', marginTop: 15, fontSize: 12, fontStyle: 'italic' },
+
   fabBtnDark: { position: 'absolute', bottom: 30, right: 24, width: 65, height: 65, borderRadius: 32.5, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 15, elevation: 8 },
+
   modalSheetDark: { backgroundColor: '#0F172A', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 25, borderWidth: 1, borderColor: '#334155' },
   sheetHandleDark: { width: 40, height: 5, backgroundColor: '#334155', borderRadius: 3, alignSelf: 'center', marginBottom: 20 },
   sheetTitleLight: { fontSize: 24, fontWeight: '900', color: '#FFF', marginBottom: 25 },
@@ -1170,6 +1221,7 @@ const styles = StyleSheet.create({
   sheetSaveText: { color: '#FFF', fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
   sheetCancelBtn: { padding: 15, alignItems: 'center', marginTop: 5, marginBottom: Platform.OS === 'ios' ? 20 : 0 },
   sheetCancelText: { color: '#94A3B8', fontSize: 16, fontWeight: 'bold' },
+
   subjectChip: { backgroundColor: 'rgba(30, 41, 59, 0.8)', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 20, marginRight: 10, borderWidth: 1, borderColor: '#334155', justifyContent: 'center' },
   subjectChipText: { color: '#CBD5E1', fontSize: 14, fontWeight: '600' },
   daysRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25 },
