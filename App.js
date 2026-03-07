@@ -205,10 +205,49 @@ export default function App() {
   const [horarios, setHorarios] = useState([]);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [selectedDayTab, setSelectedDayTab] = useState('Lunes');
+
+  const [horariosSubTab, setHorariosSubTab] = useState('grilla');
+
+  const [scheduleEntryMode, setScheduleEntryMode] = useState('materia'); // 'materia' o 'evento'
+  const [customEventTitle, setCustomEventTitle] = useState('');
+  const [customEventDate, setCustomEventDate] = useState(new Date().toISOString().split('T')[0]);
+
   const [newSubject, setNewSubject] = useState(null); 
   const [newDay, setNewDay] = useState('Lunes');
   const [newStartTime, setNewStartTime] = useState('8'); 
   const [newEndTime, setNewEndTime] = useState('10');    
+
+  const cleanOldEvents = async (allHorarios) => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0); 
+
+    const horariosFiltrados = allHorarios.filter(h => {
+      if (!h.isCustom || !h.date) return true; // Mantener materias intactas
+      
+      const partes = h.date.split('-');
+      if (partes.length !== 3) return true;
+
+      // El mes en JavaScript empieza en 0, por eso le restamos 1
+      const fechaEvento = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
+      fechaEvento.setHours(0, 0, 0, 0);
+      
+      // Mantiene el evento solo si es HOY o en el FUTURO
+      return fechaEvento >= hoy; 
+    });
+
+    if (horariosFiltrados.length < allHorarios.length) {
+      setHorarios(horariosFiltrados);
+      if (auth.currentUser) {
+        try {
+          await setDoc(doc(db, "usuarios", auth.currentUser.uid), { horarios: horariosFiltrados }, { merge: true });
+        } catch (error) {
+          console.error("Error limpiando eventos:", error);
+        }
+      }
+    } else {
+      setHorarios(allHorarios);
+    }
+  };
 
   const [mercadoSubTab, setMercadoSubTab] = useState('tienda'); 
   const [storeFilter, setStoreFilter] = useState('ALL'); 
@@ -232,6 +271,29 @@ export default function App() {
   const showAlert = (title, message, buttons = null) => {
     setCustomAlert({ visible: true, title, message, buttons });
   };
+
+  // --- NUEVO: AGREGA ESTE BLOQUE EXACTAMENTE AQUÍ ---
+  const renderAlertContent = () => (
+    <View style={styles.customAlertCard}>
+      <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
+        <Ionicons name="alert-circle" size={36} color={theme.primary} />
+      </View>
+      <Text style={styles.alertTitle}>{customAlert.title}</Text>
+      <Text style={styles.alertMessage}>{customAlert.message}</Text>
+      <View style={styles.alertButtonsRow}>
+        {customAlert.buttons ? customAlert.buttons.map((btn, index) => (
+          <TouchableOpacity key={index} style={[styles.alertBtn, { backgroundColor: btn.style === 'destructive' ? '#EF4444' : btn.style === 'cancel' ? '#334155' : theme.secondary, marginHorizontal: 5 }]} onPress={() => { if(btn.onPress) btn.onPress(); else setCustomAlert({ visible: false, title: '', message: '', buttons: null }); }}>
+            <Text style={styles.alertBtnText}>{btn.text}</Text>
+          </TouchableOpacity>
+        )) : (
+          <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
+            <Text style={styles.alertBtnText}>Entendido</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+  // ---------------------------------------------------
 
   const calcularPesoDeOrden = (titulo) => {
     const t = titulo.toLowerCase();
@@ -356,7 +418,7 @@ export default function App() {
       }));
 
       setPlan(basePlan);
-      setHorarios(savedHorarios);
+      cleanOldEvents(savedHorarios); // Limpia eventos pasados antes de mostrarlos
       setMisApuntes(savedApuntes);
       setIsAuthenticated(true);
       
@@ -494,47 +556,105 @@ export default function App() {
     return grouped;
   }, [plan]);
 
+  function removeScheduleItem(id) {
+    setCustomAlert({ visible: false, title: '', message: '', buttons: null });
+    setHorarios(prev => {
+      const updated = prev.filter(item => item.id !== id);
+      if (auth.currentUser) {
+        setDoc(doc(db, "usuarios", auth.currentUser.uid), { horarios: updated }, { merge: true })
+          .catch(e => console.error(e));
+      }
+      return updated;
+    });
+  }
+
   const addToSchedule = async () => {
     const start = parseInt(newStartTime);
     const end = parseInt(newEndTime);
 
-    // 1. Validar que estén todos los datos y que los horarios estén en el rango permitido
-    if (!newSubject || !newDay || isNaN(start) || isNaN(end) || start < MIN_HORA || end > MAX_HORA + 1) {
-      showAlert("Horario Inválido", `Por favor selecciona una materia, un día y horas entre las ${MIN_HORA}:00 y las ${MAX_HORA + 1}:00.`);
+    if (isNaN(start) || isNaN(end) || start < MIN_HORA || end > MAX_HORA + 1) {
+      showAlert("Horario Inválido", `Las horas deben estar entre ${MIN_HORA}:00 y ${MAX_HORA + 1}:00.`);
       return;
     }
-
-    // 2. Validar que la hora de inicio NO sea mayor o igual a la hora de fin
     if (start >= end) {
-      showAlert("Rango Inválido", "La hora de finalización debe ser mayor a la hora de inicio.\n\nEjemplo válido: Inicio 8, Fin 10.");
+      showAlert("Rango Inválido", "La hora de finalización debe ser mayor a la hora de inicio.");
       return;
     }
 
-    // 3. Validar superposición (overlap) de horarios
-    const eventosDelMismoDia = horarios.filter(h => h.day === newDay);
-    const haySuperposicion = eventosDelMismoDia.some(evento => {
-      // Fórmula matemática para detectar si dos rangos de horas se cruzan
-      return (start < evento.end && end > evento.start);
-    });
+    let blockTitle = '';
+    let blockCode = '';
+    let blockColor = theme.primary;
+    let blockDay = newDay; // Para materias
+    let blockDate = null;  // Para eventos
 
-    if (haySuperposicion) {
-      showAlert("Cruce de Horarios", "Ya tienes una materia asignada en este bloque horario. Por favor, verifica tu grilla y elige otro horario.");
-      return;
+    if (scheduleEntryMode === 'materia') {
+      if (!newSubject) {
+        showAlert("Falta Materia", "Selecciona una materia de la lista.");
+        return;
+      }
+      blockTitle = newSubject.title;
+      blockCode = newSubject.id;
+      
+      // 3. Validar superposición (SOLO PARA MATERIAS EN LA GRILLA)
+      const materiasDelDia = horarios.filter(h => h.day === blockDay && !h.isCustom);
+      const haySuperposicion = materiasDelDia.some(evento => {
+        return (start < evento.end && end > evento.start); 
+      });
+
+      if (haySuperposicion) {
+        showAlert("Cruce de Horarios", "Ya tienes una materia asignada en este bloque horario.");
+        return;
+      }
+
+    } else {
+      // ESTAMOS CREANDO UN EVENTO
+      if (customEventTitle.trim() === '') {
+        showAlert("Falta Título", "Escribe un nombre para el evento.");
+        return;
+      }
+      
+      const cleanDate = customEventDate.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
+        showAlert("Fecha Inválida", "Asegúrate de usar el formato YYYY-MM-DD con guiones (Ej: 2026-10-15).");
+        return;
+      }
+      
+      // Para eventos, calculamos qué día cae solo para mostrarlo lindo en la tarjeta, pero NO va a la grilla
+      const partes = cleanDate.split('-');
+      const dateObj = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
+      const diasArray = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+      
+      blockDay = diasArray[dateObj.getDay()]; // Ej: "Martes"
+      blockTitle = customEventTitle;
+      blockCode = 'EVENTO';
+      blockColor = '#EF4444'; // Color de eventos
+      blockDate = cleanDate; 
     }
 
-    // Si pasa todas las validaciones, creamos el horario
+    // 4. Crear y Guardar
     const newHorario = { 
-      id: Math.random().toString(), subject: newSubject.title, code: newSubject.id,
-      day: newDay, start: start, end: end, color: theme.primary 
+      id: Math.random().toString(), subject: blockTitle, code: blockCode,
+      day: blockDay, start: start, end: end, color: blockColor,
+      isCustom: scheduleEntryMode === 'evento', date: blockDate
     };
 
     const updatedHorarios = [...horarios, newHorario];
     setHorarios(updatedHorarios);
+    
+    // Cerrar y limpiar
     setScheduleModalVisible(false);
     setNewSubject(null);
+    setCustomEventTitle('');
     setNewStartTime('8');
     setNewEndTime('10');
-    setSelectedDayTab(newDay);
+
+    // Cambiar la vista para que el usuario vea lo que acaba de agregar
+    if (scheduleEntryMode === 'materia') {
+      setSelectedDayTab(newDay);
+      setHorariosSubTab('grilla');
+    } else {
+      setHorariosSubTab('eventos');
+    }
 
     if (auth.currentUser) {
       try {
@@ -542,19 +662,6 @@ export default function App() {
       } catch(error) {
           console.error("Error guardando horario:", error);
       }
-    }
-  };
-
-  const removeScheduleItem = async (id) => {
-    const updatedHorarios = horarios.filter(item => item.id !== id);
-    setHorarios(updatedHorarios);
-
-    if (auth.currentUser) {
-        try {
-            await setDoc(doc(db, "usuarios", auth.currentUser.uid), { horarios: updatedHorarios }, { merge: true });
-        } catch(error) {
-            console.error("Error borrando horario:", error);
-        }
     }
   };
 
@@ -665,116 +772,217 @@ export default function App() {
     </ScrollView>
   );
 
-  const renderHorarios = () => (
-    <View style={[styles.screenContainer, {flex: 1, paddingHorizontal: 0, paddingTop: Platform.OS === 'android' ? 50 : 24}]}>
-      <View style={[styles.header, {paddingHorizontal: 24}]}>
-        <View>
-          <Text style={[styles.greetingLight, { color: theme.primary }]}>Organizador Semanal</Text>
-          <Text style={styles.screenTitleLight}>Mis Horarios</Text>
-        </View>
-      </View>
-      <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10 }}>
-          <View style={styles.gridContainer}>
-            <View style={styles.timeColumn}>
-              <View style={styles.emptyCorner} />
-              {HORAS.map(h => (
-                <View key={h} style={styles.timeLabelContainer}><Text style={styles.timeLabelText}>{h}:00</Text></View>
-              ))}
-            </View>
-            {DIAS_SEMANA.map(dia => (
-              <View key={dia} style={styles.dayColumn}>
-                <View style={styles.dayColHeader}><Text style={styles.dayColHeaderText}>{dia.substring(0, 3)}</Text></View>
-                <View style={styles.dayColBody}>
-                  {HORAS.map(h => (<View key={h} style={styles.gridLine} />))}
-                  {horarios.filter(h => h.day === dia).map(evento => {
-                    const topPosition = (evento.start - MIN_HORA) * 60; 
-                    const blockHeight = (evento.end - evento.start) * 60;
-                    return (
-                      <TouchableOpacity key={evento.id} style={[styles.eventBlock, { top: topPosition, height: blockHeight, backgroundColor: evento.color }]} onLongPress={() => {
-                          showAlert("Eliminar bloque", `¿Quitar ${evento.subject} del horario?`, [
-                              { text: "Cancelar", onPress: () => setCustomAlert({ visible: false, title: '', message: '', buttons: null }) }, 
-                              { text: "Eliminar", style: 'destructive', onPress: () => { removeScheduleItem(evento.id); setCustomAlert({ visible: false, title: '', message: '', buttons: null }); } }
-                            ]);
-                        }}>
-                        <Text style={styles.eventBlockCode}>{evento.code}</Text>
-                        <Text style={styles.eventBlockTitle} numberOfLines={3}>{evento.subject}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-        <Text style={styles.hintText}>Mantén presionado un bloque para eliminarlo.</Text>
-        <View style={{height: 100}} />
-      </ScrollView>
-      <TouchableOpacity style={[styles.fabBtnDark, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={() => setScheduleModalVisible(true)}>
-        <Ionicons name="add" size={30} color="#FFF" />
-      </TouchableOpacity>
+  const renderHorarios = () => {
+    // Protegemos el ordenamiento por si hay eventos viejos dañados
+    const eventosPersonalizados = horarios.filter(h => h.isCustom).sort((a, b) => {
+      const fechaA = a.date ? new Date(a.date).getTime() : 0;
+      const fechaB = b.date ? new Date(b.date).getTime() : 0;
+      return fechaA - fechaB;
+    });
 
-      <Modal animationType="slide" transparent={true} visible={scheduleModalVisible}>
-        {/* Envolvemos todo en un View flex: 1 para poder superponer la alerta */}
-        <View style={{ flex: 1 }}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlayDark}>
-            <View style={styles.modalSheetDark}>
-              <View style={styles.sheetHandleDark} />
-              <Text style={styles.sheetTitleLight}>Vincular Materia</Text>
-              <Text style={styles.sheetLabelDark}>Materias disponibles para cursar:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 25, maxHeight: 50}}>
-                {availableSubjects.length > 0 ? availableSubjects.map(s => (
-                  <TouchableOpacity key={s.id} style={[styles.subjectChip, newSubject?.id === s.id && {backgroundColor: theme.primary, borderColor: theme.primary}]} onPress={() => setNewSubject(s)}>
-                    <Text style={[styles.subjectChipText, newSubject?.id === s.id && {color: '#FFF', fontWeight: 'bold'}]}>{s.title}</Text>
-                  </TouchableOpacity>
-                )) : (<Text style={{color: '#64748B', alignSelf: 'center', fontStyle: 'italic', marginTop: 10}}>No hay materias desbloqueadas.</Text>)}
-              </ScrollView>
-              <Text style={styles.sheetLabelDark}>Día de la semana:</Text>
-              <View style={styles.daysRow}>
-                {DIAS_SEMANA.map(d => (
-                  <TouchableOpacity key={d} style={[styles.dayQuickBtn, newDay === d && {backgroundColor: theme.primary, borderColor: theme.primary}]} onPress={() => setNewDay(d)}>
-                    <Text style={[styles.dayQuickBtnText, newDay === d && {color: '#FFF', fontWeight: 'bold'}]}>{d.substring(0, 3)}</Text>
-                  </TouchableOpacity>
+    return (
+      <View style={[styles.screenContainer, {flex: 1, paddingHorizontal: 0, paddingTop: Platform.OS === 'android' ? 50 : 24}]}>
+        <View style={[styles.header, {paddingHorizontal: 24}]}>
+          <View>
+            <Text style={[styles.greetingLight, { color: theme.primary }]}>Organizador Semanal</Text>
+            <Text style={styles.screenTitleLight}>Mis Horarios</Text>
+          </View>
+        </View>
+
+        {/* TABS GRILLA VS EVENTOS */}
+        <View style={[styles.mercadoTabContainer, {marginHorizontal: 24}]}>
+          <TouchableOpacity style={[styles.mercadoTabBtn, horariosSubTab === 'grilla' && { backgroundColor: theme.primary }]} onPress={() => setHorariosSubTab('grilla')}>
+            <Ionicons name="grid" size={18} color={horariosSubTab === 'grilla' ? "#FFF" : "#64748B"} />
+            <Text style={[styles.mercadoTabText, horariosSubTab === 'grilla' && { color: '#FFF' }]}>Grilla</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.mercadoTabBtn, horariosSubTab === 'eventos' && { backgroundColor: theme.primary }]} onPress={() => setHorariosSubTab('eventos')}>
+            <Ionicons name="calendar" size={18} color={horariosSubTab === 'eventos' ? "#FFF" : "#64748B"} />
+            <Text style={[styles.mercadoTabText, horariosSubTab === 'eventos' && { color: '#FFF' }]}>Eventos</Text>
+          </TouchableOpacity>
+        </View>
+
+        {horariosSubTab === 'grilla' ? (
+          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10 }}>
+              <View style={styles.gridContainer}>
+                <View style={styles.timeColumn}>
+                  <View style={styles.emptyCorner} />
+                  {HORAS.map(h => (
+                    <View key={h} style={styles.timeLabelContainer}><Text style={styles.timeLabelText}>{h}:00</Text></View>
+                  ))}
+                </View>
+                {DIAS_SEMANA.map(dia => (
+                  <View key={dia} style={styles.dayColumn}>
+                    <View style={styles.dayColHeader}><Text style={styles.dayColHeaderText}>{dia.substring(0, 3)}</Text></View>
+                    <View style={styles.dayColBody}>
+                      {HORAS.map(h => (<View key={h} style={styles.gridLine} />))}
+                      
+                      {/* SOLO MOSTRAR MATERIAS EN LA GRILLA, IGNORAR EVENTOS */}
+                      {horarios.filter(h => h.day === dia && !h.isCustom).map(evento => {
+                        const topPosition = (evento.start - MIN_HORA) * 60; 
+                        const blockHeight = (evento.end - evento.start) * 60;
+                        return (
+                          <TouchableOpacity key={evento.id} style={[styles.eventBlock, { top: topPosition, height: blockHeight, backgroundColor: evento.color }]} onLongPress={() => {
+                              showAlert("Eliminar bloque", `¿Quitar ${evento.subject} del horario?`, [
+                                  { text: "Cancelar", onPress: () => setCustomAlert({ visible: false, title: '', message: '', buttons: null }) }, 
+                                  // AQUÍ PASAMOS LA FUNCIÓN DIRECTAMENTE
+                                  { text: "Eliminar", style: 'destructive', onPress: () => removeScheduleItem(evento.id) }
+                                ]);
+                            }}>
+                            <Text style={styles.eventBlockCode}>{evento.code}</Text>
+                            <Text style={styles.eventBlockTitle} numberOfLines={3}>{evento.subject}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
                 ))}
               </View>
-              <View style={styles.sheetInputGroup}>
-                <Text style={styles.sheetLabelDark}>Rango Horario (Ej: 8 a 12):</Text>
-                <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
-                  <TextInput style={[styles.sheetInputDark, {flex: 1, textAlign: 'center'}]} placeholder="Inicio" placeholderTextColor="#64748B" keyboardType="numeric" value={newStartTime} onChangeText={setNewStartTime} />
-                  <Text style={{color: '#94A3B8', paddingHorizontal: 15, fontWeight: 'bold'}}>hasta</Text>
-                  <TextInput style={[styles.sheetInputDark, {flex: 1, textAlign: 'center'}]} placeholder="Fin" placeholderTextColor="#64748B" keyboardType="numeric" value={newEndTime} onChangeText={setNewEndTime} />
+            </ScrollView>
+            <Text style={styles.hintText}>Mantén presionado un bloque para eliminarlo.</Text>
+            <View style={{height: 100}} />
+          </ScrollView>
+        ) : (
+          <ScrollView style={{ flex: 1, paddingHorizontal: 24 }}>
+            {eventosPersonalizados.length > 0 ? (
+              eventosPersonalizados.map(evento => (
+                <View key={evento.id} style={styles.storeCard}>
+                  <View style={styles.storeCardHeader}>
+                    <View style={[styles.storeIconBox, { backgroundColor: '#EF444420' }]}><Ionicons name="calendar" size={28} color="#EF4444" /></View>
+                    <View style={styles.storeCardTextContainer}>
+                      <Text style={styles.storeCardTitle}>{evento.subject}</Text>
+                      <Text style={styles.storeCardSubtitle}>{evento.day} {evento.date}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => {
+                        showAlert("Eliminar evento", `¿Seguro que quieres eliminar "${evento.subject}"?`, [
+                          { text: "Cancelar", style: 'cancel', onPress: () => setCustomAlert({ visible: false, title: '', message: '', buttons: null }) }, 
+                          // AQUÍ TAMBIÉN
+                          { text: "Eliminar", style: 'destructive', onPress: () => removeScheduleItem(evento.id) }
+                        ]);
+                    }}>
+                       <Ionicons name="trash" size={24} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.storeCardDesc}>Horario: {evento.start}:00 a {evento.end}:00 hs.</Text>
                 </View>
+              ))
+            ) : (
+              <View style={styles.emptyDriveBox}>
+                <Ionicons name="calendar-clear-outline" size={50} color="#475569" style={{marginBottom: 15}}/>
+                <Text style={styles.emptyDriveTitle}>No hay eventos</Text>
+                <Text style={styles.emptyDriveText}>Tus próximos exámenes o entregas aparecerán aquí y se borrarán solos al día siguiente.</Text>
               </View>
-              <TouchableOpacity style={[styles.sheetSaveBtnDark, { backgroundColor: theme.secondary }]} onPress={addToSchedule}>
-                <Text style={styles.sheetSaveText}>Agregar al Calendario</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setScheduleModalVisible(false)}>
-                <Text style={styles.sheetCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-          </KeyboardAvoidingView>
+            )}
+            <View style={{height: 100}} />
+          </ScrollView>
+        )}
 
-          {/* EL TRUCO: Dibujamos la alerta AQUÍ ADENTRO con posición absoluta para tapar el formulario */}
-          {customAlert.visible && (
-            <View style={[styles.modalOverlayDark, StyleSheet.absoluteFill, { zIndex: 9999, elevation: 9999, justifyContent: 'center', alignItems: 'center' }]}>
-              <View style={styles.customAlertCard}>
-                <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
-                  <Ionicons name="alert-circle" size={36} color={theme.primary} />
-                </View>
-                <Text style={styles.alertTitle}>{customAlert.title}</Text>
-                <Text style={styles.alertMessage}>{customAlert.message}</Text>
-                <View style={styles.alertButtonsRow}>
-                  <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
-                    <Text style={styles.alertBtnText}>Entendido</Text>
+        <TouchableOpacity style={[styles.fabBtnDark, { backgroundColor: theme.secondary, shadowColor: theme.primary }]} onPress={() => setScheduleModalVisible(true)}>
+          <Ionicons name="add" size={30} color="#FFF" />
+        </TouchableOpacity>
+
+        {/* MODAL PARA AGREGAR HORARIOS (CON TABS) */}
+        <Modal animationType="slide" transparent={true} visible={scheduleModalVisible}>
+          <View style={{ flex: 1 }}>
+            
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlayDark}>
+              <View style={styles.modalSheetDark}>
+                <View style={styles.sheetHandleDark} />
+                <Text style={styles.sheetTitleLight}>Agregar al Calendario</Text>
+                
+                <View style={{flexDirection: 'row', backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 12, padding: 5, marginBottom: 20}}>
+                  <TouchableOpacity style={{flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8, backgroundColor: scheduleEntryMode === 'materia' ? theme.primary : 'transparent'}} onPress={() => setScheduleEntryMode('materia')}>
+                    <Text style={{fontWeight: 'bold', color: scheduleEntryMode === 'materia' ? '#FFF' : '#64748B'}}>Materia</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={{flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8, backgroundColor: scheduleEntryMode === 'evento' ? '#EF4444' : 'transparent'}} onPress={() => setScheduleEntryMode('evento')}>
+                    <Text style={{fontWeight: 'bold', color: scheduleEntryMode === 'evento' ? '#FFF' : '#64748B'}}>Evento Único</Text>
                   </TouchableOpacity>
                 </View>
+
+                {scheduleEntryMode === 'materia' ? (
+                  <>
+                    <Text style={styles.sheetLabelDark}>Materias disponibles para cursar:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 25, maxHeight: 50}}>
+                      {availableSubjects.length > 0 ? availableSubjects.map(s => (
+                        <TouchableOpacity key={s.id} style={[styles.subjectChip, newSubject?.id === s.id && {backgroundColor: theme.primary, borderColor: theme.primary}]} onPress={() => setNewSubject(s)}>
+                          <Text style={[styles.subjectChipText, newSubject?.id === s.id && {color: '#FFF', fontWeight: 'bold'}]}>{s.title}</Text>
+                        </TouchableOpacity>
+                      )) : (<Text style={{color: '#64748B', alignSelf: 'center', fontStyle: 'italic', marginTop: 10}}>No hay materias desbloqueadas.</Text>)}
+                    </ScrollView>
+                    <Text style={styles.sheetLabelDark}>Día de la semana:</Text>
+                    <View style={styles.daysRow}>
+                      {DIAS_SEMANA.map(d => (
+                        <TouchableOpacity key={d} style={[styles.dayQuickBtn, newDay === d && {backgroundColor: theme.primary, borderColor: theme.primary}]} onPress={() => setNewDay(d)}>
+                          <Text style={[styles.dayQuickBtnText, newDay === d && {color: '#FFF', fontWeight: 'bold'}]}>{d.substring(0, 3)}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.sheetLabelDark}>Título (Ej: Parcial de Física):</Text>
+                    <TextInput style={[styles.sheetInputDark, {marginBottom: 15}]} placeholder="Nombre del evento" placeholderTextColor="#64748B" value={customEventTitle} onChangeText={setCustomEventTitle} maxLength={30} />
+                    
+                    <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 5}}>
+                      <Text style={styles.sheetLabelDark}>Fecha Exacta:</Text>
+                      <TouchableOpacity onPress={() => {
+                        const hoy = new Date();
+                        const fechaString = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
+                        setCustomEventDate(fechaString);
+                      }}>
+                        <Text style={{color: theme.primary, fontWeight: 'bold', fontSize: 14, marginBottom: 12}}>Poner Hoy</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(30, 41, 59, 0.8)', borderRadius: 16, borderWidth: 1, borderColor: '#334155', paddingHorizontal: 16, marginBottom: 25}}>
+                      <Ionicons name="calendar-outline" size={20} color="#64748B" style={{marginRight: 10}} />
+                      <TextInput 
+                        style={{flex: 1, color: '#FFF', fontSize: 16, paddingVertical: 16}} 
+                        placeholder="YYYY-MM-DD" 
+                        placeholderTextColor="#64748B" 
+                        value={customEventDate} 
+                        onChangeText={(text) => {
+                          let formatted = text.replace(/[^0-9-]/g, '');
+                          if (formatted.length === 4 && customEventDate.length === 3) formatted += '-';
+                          if (formatted.length === 7 && customEventDate.length === 6) formatted += '-';
+                          setCustomEventDate(formatted);
+                        }} 
+                        maxLength={10} 
+                        keyboardType="numeric"
+                      />
+                    </View>
+                  </>
+                )}
+
+                <View style={styles.sheetInputGroup}>
+                  <Text style={styles.sheetLabelDark}>Rango Horario (Ej: 8 a 12):</Text>
+                  <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
+                    <TextInput style={[styles.sheetInputDark, {flex: 1, textAlign: 'center'}]} placeholder="Inicio" placeholderTextColor="#64748B" keyboardType="numeric" value={newStartTime} onChangeText={setNewStartTime} />
+                    <Text style={{color: '#94A3B8', paddingHorizontal: 15, fontWeight: 'bold'}}>hasta</Text>
+                    <TextInput style={[styles.sheetInputDark, {flex: 1, textAlign: 'center'}]} placeholder="Fin" placeholderTextColor="#64748B" keyboardType="numeric" value={newEndTime} onChangeText={setNewEndTime} />
+                  </View>
+                </View>
+
+                <TouchableOpacity style={[styles.sheetSaveBtnDark, { backgroundColor: scheduleEntryMode === 'evento' ? '#EF4444' : theme.secondary }]} onPress={addToSchedule}>
+                  <Text style={styles.sheetSaveText}>Guardar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setScheduleModalVisible(false)}>
+                  <Text style={styles.sheetCancelText}>Cancelar</Text>
+                </TouchableOpacity>
               </View>
-            </View>
-          )}
-        </View>
-      </Modal>
-    </View>
-  );
+            </KeyboardAvoidingView>
+
+            {/* Alerta interna del modal (si se intenta guardar mal) */}
+            {customAlert.visible && (
+              <View style={[styles.modalOverlayDark, StyleSheet.absoluteFill, { zIndex: 9999, elevation: 9999, justifyContent: 'center', alignItems: 'center' }]}>
+                {renderAlertContent()}
+              </View>
+            )}
+
+          </View>
+        </Modal>
+      </View>
+    );
+  };
 
   const renderMercado = () => {
     if (isStoreLoading) {
@@ -1079,25 +1287,10 @@ export default function App() {
         </View>
       </Modal>
 
-        <Modal visible={customAlert.visible && !scheduleModalVisible} transparent={true} animationType="fade">        <View style={styles.modalOverlayDark}>
-          <View style={styles.customAlertCard}>
-            <View style={[styles.alertIconBubble, { backgroundColor: theme.primary + '20' }]}>
-              <Ionicons name="alert-circle" size={36} color={theme.primary} />
-            </View>
-            <Text style={styles.alertTitle}>{customAlert.title}</Text>
-            <Text style={styles.alertMessage}>{customAlert.message}</Text>
-            <View style={styles.alertButtonsRow}>
-              {customAlert.buttons ? customAlert.buttons.map((btn, index) => (
-                <TouchableOpacity key={index} style={[styles.alertBtn, { backgroundColor: btn.style === 'destructive' ? '#EF4444' : btn.style === 'cancel' ? '#334155' : theme.secondary, marginHorizontal: 5 }]} onPress={() => { if(btn.onPress) btn.onPress(); else setCustomAlert({ visible: false, title: '', message: '', buttons: null }); }}>
-                  <Text style={styles.alertBtnText}>{btn.text}</Text>
-                </TouchableOpacity>
-              )) : (
-                <TouchableOpacity style={[styles.alertBtn, { backgroundColor: theme.secondary }]} onPress={() => setCustomAlert({ visible: false, title: '', message: '', buttons: null })}>
-                  <Text style={styles.alertBtnText}>Entendido</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
+        {/* Modal de Alerta Global */}
+      <Modal visible={customAlert.visible && !scheduleModalVisible} transparent={true} animationType="fade">        
+        <View style={styles.modalOverlayDark}>
+          {renderAlertContent()}
         </View>
       </Modal>
 
