@@ -67,6 +67,27 @@ const getSneakPeekData = (firebaseTitle) => {
   return key ? SNEAK_PEEKS[key] : null;
 };
 
+// 🎨 RECONOCEDOR DE TIPO DE ARCHIVO
+const getFileStyle = (filename) => {
+  if (!filename) return { icon: 'document-outline', color: '#94A3B8' };
+  const nameLower = filename.toLowerCase();
+  if (nameLower.match(/\.pdf$/)) return { icon: 'document-text', color: '#EF4444' }; 
+  if (nameLower.match(/\.docx?$/)) return { icon: 'document', color: '#3B82F6' }; 
+  if (nameLower.match(/\.pptx?$/)) return { icon: 'easel', color: '#F59E0B' }; 
+  if (nameLower.match(/\.xlsx?$/)) return { icon: 'stats-chart', color: '#10B981' }; 
+  if (nameLower.match(/\.(jpg|jpeg|png|gif)$/)) return { icon: 'image', color: '#8B5CF6' }; 
+  if (nameLower.match(/\.(zip|rar)$/)) return { icon: 'archive', color: '#64748B' }; 
+  return { icon: 'document-outline', color: '#94A3B8' }; 
+};
+
+// 🕰️ SALUDO DINÁMICO
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Buenos días';
+  if (hour < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+};
+
 const SPACE_CAREERS = ["Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica"];
 const CARRERAS = ["Lic. en Física", "Lic. en Matemática", "Lic. en Física Médica", "Lic. en Bioquímica", "Farmacia", "Lic. en Biotecnología", "Lic. en Química", "Óptica Ocular y Optometría", "Tec. Univ. en Química", "Lic. en Cs. de Alimentos", "Tec. Univ. en Alimentos", "Química y Tec. Ambiental"];
 const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
@@ -107,7 +128,7 @@ const ChemistryBackground = () => {
   const bubbles = useMemo(() => Array.from({ length: 30 }).map((_, i) => ({ id: i, size: Math.random() * 20 + 10, left: Math.random() * width, delay: Math.random() * 5000, duration: Math.random() * 6000 + 4000 })), []);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => { Animated.loop(Animated.sequence([ Animated.timing(pulseAnim, { toValue: 1.1, duration: 4000, useNativeDriver: true }), Animated.timing(pulseAnim, { toValue: 1, duration: 4000, useNativeDriver: true }) ])).start(); }, []);
-  return ( <View style={StyleSheet.absoluteFillObject}><View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#022C22' }]} /> <Animated.View style={[styles.nebula, { top: -50, right: -50, backgroundColor: '#059669', transform: [{ scale: pulseAnim }] }]} /><Animated.View style={[styles.nebula, { bottom: height/4, left: -100, backgroundColor: '#0D9488', width: 350, height: 350, transform: [{ scale: pulseAnim }] }]} />{bubbles.map(b => <FloatingBubble key={b.id} size={b.size} left={b.left} delay={b.delay} duration={b.duration} />)}<View style={{ position: 'absolute', top: '15%', right: 20, opacity: 0.15, transform: [{ rotate: '15deg' }] }}><Ionicons name="flask" size={150} color="#34D399" /></View><View style={{ position: 'absolute', bottom: '10%', left: -20, opacity: 0.1, transform: [{ rotate: '-20deg' }] }}><Ionicons name="beaker" size={180} color="#2DD4BF" /></View></View> );
+  return ( <View style={StyleSheet.absoluteFillObject}><View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#022C22' }]} /><Animated.View style={[styles.nebula, { top: -50, right: -50, backgroundColor: '#059669', transform: [{ scale: pulseAnim }] }]} /><Animated.View style={[styles.nebula, { bottom: height/4, left: -100, backgroundColor: '#0D9488', width: 350, height: 350, transform: [{ scale: pulseAnim }] }]} />{bubbles.map(b => <FloatingBubble key={b.id} size={b.size} left={b.left} delay={b.delay} duration={b.duration} />)}<View style={{ position: 'absolute', top: '15%', right: 20, opacity: 0.15, transform: [{ rotate: '15deg' }] }}><Ionicons name="flask" size={150} color="#34D399" /></View><View style={{ position: 'absolute', bottom: '10%', left: -20, opacity: 0.1, transform: [{ rotate: '-20deg' }] }}><Ionicons name="beaker" size={180} color="#2DD4BF" /></View></View> );
 };
 
 // ==========================================
@@ -116,8 +137,12 @@ const ChemistryBackground = () => {
 export default function App() {
   const [isAppReady, setIsAppReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  // 📚 ESTADOS DEL ONBOARDING
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
   const scrollX = useRef(new Animated.Value(0)).current; 
+  const scrollViewRef = useRef(null); 
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0); 
 
   const [authMode, setAuthMode] = useState('login');
   const [email, setEmail] = useState('');
@@ -129,6 +154,29 @@ export default function App() {
   const [logoTaps, setLogoTaps] = useState(0);
   const [showEasterEgg, setShowEasterEgg] = useState(false);
   const [titleTaps, setTitleTaps] = useState(0); 
+
+  // 🔥 POMODORO STATES
+  const [pomodoroVisible, setPomodoroVisible] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(25 * 60);
+  const [timerActive, setTimerActive] = useState(false);
+
+  useEffect(() => {
+    let interval = null;
+    if (timerActive && timeLeft > 0) {
+      interval = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+    } else if (timeLeft === 0 && timerActive) {
+      setTimerActive(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Notifications.scheduleNotificationAsync({ content: { title: "¡Tiempo completado! 🧠", body: "Buen trabajo. Tómate 5 minutos de descanso.", sound: true }, trigger: null });
+    }
+    return () => clearInterval(interval);
+  }, [timerActive, timeLeft]);
+
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m < 10 ? '0':''}${m}:${s < 10 ? '0':''}${s}`;
+  };
 
   // 🔥 MODO DIOS OCULTO (Tocar Título 20 veces) 🔥
   const handleTitleTap = async () => {
@@ -215,8 +263,7 @@ export default function App() {
 
       const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (user) { await loadOfflineOrOnlineData(user.uid); setIsAuthenticated(true); } 
-        else { setIsAuthenticated(false); }
-        setIsAppReady(true); 
+        else { setIsAuthenticated(false); setIsAppReady(true); }
       });
       return unsubscribe;
     };
@@ -224,12 +271,15 @@ export default function App() {
   }, []);
 
   const loadOfflineOrOnlineData = async (uid) => {
-    try { const val = await AsyncStorage.getItem('@onboarding_complete'); if (val !== null) setHasSeenOnboarding(true); } catch(e){}
     try {
       const userDoc = await getDoc(doc(db, "usuarios", uid));
       if (userDoc.exists()) {
         const data = userDoc.data();
         setUserCareer(data.career || ''); setNotas(data.notas || {}); setMisApuntes(data.misApuntes || []); cleanOldEvents(data.horarios || []);
+        
+        if (data.tutorialCompleted) setHasSeenOnboarding(true);
+        else setHasSeenOnboarding(false);
+
         await AsyncStorage.setItem(`@offline_profile_${uid}`, JSON.stringify(data));
         if (data.career) {
           const planDoc = await getDoc(doc(db, "planes_estudio", data.career));
@@ -256,14 +306,21 @@ export default function App() {
       try { const avisosSnap = await getDocs(collection(db, "avisos_comunitarios")); if (!avisosSnap.empty) setAvisos(avisosSnap.docs.map(d => ({id: d.id, ...d.data()}))); } catch (e) {}
 
     } catch (error) {
+      console.log("Activando Modo Offline...");
       const localProfile = await AsyncStorage.getItem(`@offline_profile_${uid}`);
       const localPlan = await AsyncStorage.getItem(`@offline_plan_${uid}`);
       const localTienda = await AsyncStorage.getItem('@offline_tienda');
-      if (localProfile) { const d = JSON.parse(localProfile); setUserCareer(d.career||''); setNotas(d.notas||{}); setMisApuntes(d.misApuntes||[]); cleanOldEvents(d.horarios||[]); }
+      if (localProfile) { 
+        const d = JSON.parse(localProfile); setUserCareer(d.career||''); setNotas(d.notas||{}); setMisApuntes(d.misApuntes||[]); cleanOldEvents(d.horarios||[]); 
+        setHasSeenOnboarding(d.tutorialCompleted || false);
+      }
       if (localPlan) setPlan(JSON.parse(localPlan));
       if (localTienda) setTiendaData(JSON.parse(localTienda));
       showAlert("Modo Sin Conexión", "Estás viendo una copia de seguridad local. Conéctate a internet para ver novedades y sincronizar apuntes.");
-    } finally { setIsStoreLoading(false); }
+    } finally { 
+      setIsStoreLoading(false); 
+      setIsAppReady(true);
+    }
   };
 
   const isSpaceTheme = !userCareer || SPACE_CAREERS.includes(userCareer);
@@ -272,20 +329,25 @@ export default function App() {
 
   const showAlert = (title, message, buttons = null) => setCustomAlert({ visible: true, title, message, buttons });
 
-  // 🥚 FUNCIÓN DEL EASTER EGG (Konami Code Visual en Login)
   const handleLogoTap = () => {
     setLogoTaps(prev => {
       const next = prev + 1;
       if (next >= 7) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setShowEasterEgg(true);
-        return 0; // Reinicia contador
+        return 0; 
       }
       return next;
     });
   };
 
-  const completeOnboarding = async () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); try { await AsyncStorage.setItem('@onboarding_complete', 'true'); } catch (e) {} setHasSeenOnboarding(true); };
+  const completeOnboarding = async () => { 
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); 
+    setHasSeenOnboarding(true);
+    if (auth.currentUser) {
+      try { await setDoc(doc(db, "usuarios", auth.currentUser.uid), { tutorialCompleted: true }, { merge: true }); } catch (e) {}
+    } 
+  };
 
   const cleanOldEvents = async (allHorarios) => {
     const hoy = new Date(); hoy.setHours(0, 0, 0, 0); 
@@ -317,12 +379,12 @@ export default function App() {
     setIsLoading(true); 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
-      await setDoc(doc(db, "usuarios", userCredential.user.uid), { email: trimmedEmail, career: userCareer, fechaRegistro: new Date(), completedSubjects: [], horarios: [], misApuntes: [], notas: {} });
+      await setDoc(doc(db, "usuarios", userCredential.user.uid), { email: trimmedEmail, career: userCareer, fechaRegistro: new Date(), completedSubjects: [], horarios: [], misApuntes: [], notas: {}, tutorialCompleted: false });
       await loadOfflineOrOnlineData(userCredential.user.uid); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); 
     } catch (error) { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); showAlert("Error", "El correo ya está en uso."); } finally { setIsLoading(false); }
   };
 
-  const handleLogout = async () => { try { await signOut(auth); setIsAuthenticated(false); setPlan([]); setHorarios([]); setMisApuntes([]); setDrivePath([]); setNotas({}); setPassword(''); setTiendaData([]); setUserCareer(''); } catch (error) {} };
+  const handleLogout = async () => { try { await signOut(auth); setIsAuthenticated(false); setPlan([]); setHorarios([]); setMisApuntes([]); setDrivePath([]); setNotas({}); setPassword(''); setTiendaData([]); setUserCareer(''); setHasSeenOnboarding(false); setCurrentSlideIndex(0); } catch (error) {} };
 
   const isSubjectUnlocked = (subject) => !subject.dependencies || subject.dependencies.length === 0 || subject.dependencies.every(depId => plan.find(s => s.id === depId)?.completed);
   const availableSubjects = useMemo(() => plan ? plan.filter(s => !s.completed && isSubjectUnlocked(s)) : [], [plan]);
@@ -365,7 +427,7 @@ export default function App() {
     if (scheduleEntryMode === 'materia') {
       if (!newSubject) return showAlert("Falta Materia", "Selecciona una materia.");
       blockTitle = newSubject.title; blockCode = newSubject.id;
-      if (horarios.filter(h => h.day === blockDay && !h.isCustom).some(evento => (start < evento.end && end > evento.start))) return showAlert("Cruce", "Bloque ocupado.");
+      if (horarios.filter(h => h.day === blockDay && !h.isCustom).some(evento => (start < evento.end && end > evento.start))) return showAlert("Horario ocupado", "Ya tienes una materia programada en ese horario.");
     } else {
       if (customEventTitle.trim() === '') return showAlert("Falta Título", "Escribe un nombre.");
       const cleanDate = customEventDate.trim(); if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) return showAlert("Fecha", "Usa YYYY-MM-DD.");
@@ -442,7 +504,7 @@ export default function App() {
   );
 
   // ==========================================
-  // PANTALLAS DE CARGA, LOGIN Y ONBOARDING
+  // PANTALLAS DE CARGA Y AUTENTICACIÓN
   // ==========================================
   if (!isAppReady) return <View style={{flex: 1, backgroundColor: '#050519', justifyContent: 'center', alignItems: 'center'}}><ActivityIndicator size="large" color="#818CF8" /><Text style={{color: '#818CF8', marginTop: 15, fontWeight: 'bold'}}>Iniciando Universo...</Text></View>;
   
@@ -496,6 +558,9 @@ export default function App() {
     );
   }
 
+  // ==========================================
+  // PANTALLA DE ONBOARDING 
+  // ==========================================
   if (!hasSeenOnboarding) {
     const slides = [
       { id: '1', title: 'Tu carrera\nen tu bolsillo', desc: 'Lleva el control de tus materias y progreso en tiempo real.', icon: 'rocket' },
@@ -505,7 +570,23 @@ export default function App() {
     return (
       <View style={{ flex: 1, backgroundColor: '#050519' }}>
          <DynamicBackground />
-         <Animated.ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: false })}>
+
+         {/* 🔥 TEXTO SUTIL SUPERIOR 🔥 */}
+         <SafeAreaView style={{ position: 'absolute', top: Platform.OS === 'android' ? 50 : 60, width: '100%', alignItems: 'center', zIndex: 10 }}>
+            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 2 }}>Lo que te ofrece nuestra app</Text>
+         </SafeAreaView>
+
+         <Animated.ScrollView 
+           ref={scrollViewRef}
+           horizontal 
+           pagingEnabled 
+           showsHorizontalScrollIndicator={false} 
+           onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: false })}
+           onMomentumScrollEnd={(e) => {
+              const index = Math.round(e.nativeEvent.contentOffset.x / width);
+              setCurrentSlideIndex(index);
+           }}
+         >
            {slides.map((slide) => (
               <View key={slide.id} style={{ width, height: height * 0.85, justifyContent: 'center', alignItems: 'center', paddingHorizontal: width * 0.1 }}>
                  <View style={{ backgroundColor: theme.primary + '20', padding: 40, borderRadius: 100, marginBottom: 40 }}><Ionicons name={slide.icon} size={80} color={theme.primary} /></View>
@@ -522,7 +603,22 @@ export default function App() {
                 return <Animated.View key={i} style={{ width: dotWidth, height: 10, borderRadius: 5, backgroundColor: theme.primary, marginHorizontal: 6, opacity }} />
               })}
             </View>
-            <TouchableOpacity onPress={completeOnboarding} style={[styles.loginButton, {backgroundColor: theme.primary, width: width * 0.85}]}><Text style={styles.loginButtonText}>Comenzar</Text><Ionicons name="arrow-forward" size={24} color="#FFF" /></TouchableOpacity>
+            
+            {/* 🔥 BOTÓN INTELIGENTE (Siguiente / Comenzar) 🔥 */}
+            <TouchableOpacity 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                if (currentSlideIndex < slides.length - 1) {
+                  scrollViewRef.current.scrollTo({ x: (currentSlideIndex + 1) * width, animated: true });
+                } else {
+                  completeOnboarding();
+                }
+              }} 
+              style={[styles.loginButton, {backgroundColor: theme.primary, width: width * 0.85}]}
+            >
+              <Text style={styles.loginButtonText}>{currentSlideIndex === slides.length - 1 ? 'Comenzar' : 'Siguiente'}</Text>
+              <Ionicons name="arrow-forward" size={24} color="#FFF" />
+            </TouchableOpacity>
          </View>
       </View>
     );
@@ -541,11 +637,16 @@ export default function App() {
           {activeTab === 'Plan' && (
             <ScrollView style={styles.screenContainer} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadOfflineOrOnlineData(auth.currentUser?.uid)} tintColor={theme.primary} />}>
               <View style={styles.headerCentered}>
-                <TouchableOpacity onPress={() => { Haptics.selectionAsync(); setNoticesModalVisible(true); }} style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}><Ionicons name="notifications" size={22} color={theme.primary} /></TouchableOpacity>
                 
-                {/* 👇 NUEVO GATILLO DEL MODO DIOS (20 Toques al título) 👇 */}
+                {/* BOTONES IZQUIERDOS: POMODORO Y AVISOS */}
+                <View style={{flexDirection: 'row'}}>
+                  <TouchableOpacity onPress={() => { Haptics.selectionAsync(); setPomodoroVisible(true); }} style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight, marginRight: 8 }]}><Ionicons name="timer" size={22} color={theme.primary} /></TouchableOpacity>
+                  <TouchableOpacity onPress={() => { Haptics.selectionAsync(); setNoticesModalVisible(true); }} style={[styles.avatarPlaceholderDark, { borderColor: theme.bgLight }]}><Ionicons name="notifications" size={22} color={theme.primary} /></TouchableOpacity>
+                </View>
+
+                {/* 👇 GATILLO DEL MODO DIOS (20 Toques al título) Y SALUDO DINAMICO 👇 */}
                 <TouchableOpacity activeOpacity={1} onPress={handleTitleTap} style={{flex: 1, alignItems: 'center'}}>
-                  <Text style={[styles.greetingLight, { color: theme.primary, fontSize: 11 }]}>Progreso Académico</Text>
+                  <Text style={[styles.greetingLight, { color: theme.primary, fontSize: 11 }]}>{getGreeting()}</Text>
                   <Text style={[styles.screenTitleLight, { fontSize: width * 0.055 }]} numberOfLines={1}>Plan de Estudios</Text>
                 </TouchableOpacity>
 
@@ -565,7 +666,7 @@ export default function App() {
                   <View key={yearLabel} style={styles.yearSectionGlass}><View style={styles.yearHeaderDark}><Text style={styles.yearTitleLight}>{yearLabel === 'Optativas' ? 'Optativas' : `Año ${yearLabel}`}</Text><Ionicons name="school" size={18} color="#64748B" /></View>
                     {planByYear[yearLabel].map(subject => {
                       const unlocked = isSubjectUnlocked(subject);
-                      return (<TouchableOpacity key={subject.id} style={[styles.subjectRowDark, subject.completed && styles.subjectRowCompletedDark, !unlocked && styles.subjectRowLockedDark]} onPress={() => handleSubjectPress(subject)} activeOpacity={0.7}><View style={styles.subjectInfo}><Text style={[styles.subjectCodeDark, subject.completed && {color: '#64748B'}, !unlocked && {color: '#475569'}]}>{subject.id}</Text><Text style={[styles.subjectTextLight, subject.completed && styles.subjectTextCompletedDark, !unlocked && {color: '#64748B'}]}>{subject.title}</Text>{subject.completed && notas[subject.id] && (<Text style={{color: theme.primary, fontSize: 11, fontWeight: 'bold', marginTop: 2}}>Nota Final: {notas[subject.id]}</Text>)}</View><View style={[styles.checkboxDark, subject.completed && {backgroundColor: theme.secondary, borderColor: theme.secondary}, !unlocked && {borderColor: '#334155', backgroundColor: 'transparent'}]}>{subject.completed && <Ionicons name="checkmark" size={14} color="#FFF" />}{!subject.completed && !unlocked && <Ionicons name="lock-closed" size={12} color="#475569" />}</View></TouchableOpacity>);
+                      return (<TouchableOpacity key={subject.id} style={[styles.subjectRowDark, subject.completed && styles.subjectRowCompletedDark, !unlocked && styles.subjectRowLockedDark]} onPress={() => handleSubjectPress(subject)} activeOpacity={0.7}><View style={styles.subjectInfo}><Text style={[styles.subjectCodeDark, subject.completed && {color: '#64748B'}, !unlocked && {color: '#475569'}]}>{subject.id}</Text><Text style={[styles.subjectTextLight, subject.completed && styles.subjectTextCompletedDark, !unlocked && {color: '#64748B'}]}>{subject.title}</Text>{subject.completed && notas[subject.id] !== undefined && (<Text style={{color: theme.primary, fontSize: 11, fontWeight: 'bold', marginTop: 2}}>Nota Final: {notas[subject.id]}</Text>)}</View><View style={[styles.checkboxDark, subject.completed && {backgroundColor: theme.secondary, borderColor: theme.secondary}, !unlocked && {borderColor: '#334155', backgroundColor: 'transparent'}]}>{subject.completed && <Ionicons name="checkmark" size={14} color="#FFF" />}{!subject.completed && !unlocked && <Ionicons name="lock-closed" size={12} color="#475569" />}</View></TouchableOpacity>);
                     })}
                   </View>
                 ))}
@@ -618,9 +719,23 @@ export default function App() {
                 </View>
                 <View style={styles.driveHeader}><TouchableOpacity onPress={handleBackDrive} style={styles.driveBackBtn}><Ionicons name="chevron-back" size={24} color="#FFF" /></TouchableOpacity><Ionicons name="folder-open" size={20} color={theme.primary} style={{marginRight: 10}} /><Text style={styles.driveHeaderText} numberOfLines={1}>{drivePath[drivePath.length - 1].name}</Text></View>
                 <ScrollView showsVerticalScrollIndicator={false} style={styles.driveBody}>
-                  {drivePath[drivePath.length - 1].children && drivePath[drivePath.length - 1].children.map((item, index) => (
-                    <TouchableOpacity key={index} style={styles.driveItemRow} onPress={() => renderDriveNode(item)}><View style={[styles.driveItemIconBox, { backgroundColor: item.type === 'folder' ? theme.primary + '20' : '#EF444420' }]}><Ionicons name={item.type === 'folder' ? "folder" : "document-text"} size={24} color={item.type === 'folder' ? theme.primary : '#EF4444'} /></View><Text style={styles.driveItemText} numberOfLines={2}>{item.name}</Text>{item.type === 'folder' && <Ionicons name="chevron-forward" size={20} color="#475569" />}{item.type === 'file' && <Ionicons name="open-outline" size={20} color="#EF4444" />}</TouchableOpacity>
-                  ))}
+                  {drivePath[drivePath.length - 1].children && drivePath[drivePath.length - 1].children.map((item, index) => {
+                    const isFolder = item.type === 'folder';
+                    const fileStyle = isFolder ? null : getFileStyle(item.name);
+                    const itemColor = isFolder ? theme.primary : fileStyle.color;
+                    const itemIcon = isFolder ? "folder" : fileStyle.icon;
+
+                    return (
+                      <TouchableOpacity key={index} style={styles.driveItemRow} onPress={() => renderDriveNode(item)}>
+                        <View style={[styles.driveItemIconBox, { backgroundColor: itemColor + '20' }]}>
+                          <Ionicons name={itemIcon} size={24} color={itemColor} />
+                        </View>
+                        <Text style={styles.driveItemText} numberOfLines={2}>{item.name}</Text>
+                        {isFolder && <Ionicons name="chevron-forward" size={20} color="#475569" />}
+                        {!isFolder && <Ionicons name="open-outline" size={20} color={itemColor} />}
+                      </TouchableOpacity>
+                    );
+                  })}
                   {(!drivePath[drivePath.length - 1].children || drivePath[drivePath.length - 1].children.length === 0) && (<View style={styles.emptyDriveBox}><Ionicons name="file-tray" size={40} color="#475569" style={{marginBottom: 10}} /><Text style={styles.emptyDriveText}>Esta carpeta está vacía.</Text></View>)}
                   <View style={{height: 100}} />
                 </ScrollView>
@@ -683,6 +798,26 @@ export default function App() {
         </View>
         <View style={styles.bottomNavDark}><TouchableOpacity style={styles.navItem} onPress={() => switchTab('Horarios')}><Ionicons name={activeTab === 'Horarios' ? "time" : "time-outline"} size={26} color={activeTab === 'Horarios' ? theme.primary : "#64748B"} /><Text style={[styles.navTextDark, activeTab === 'Horarios' && { color: theme.primary, fontWeight: '900' }]}>Horarios</Text></TouchableOpacity><TouchableOpacity style={styles.navItem} onPress={() => switchTab('Plan')}><View style={[styles.navCenterBtnDark, activeTab === 'Plan' && { backgroundColor: theme.secondary, shadowColor: theme.primary, borderColor: theme.primary, elevation: 6 }]}><Ionicons name="git-network" size={28} color={activeTab === 'Plan' ? "#FFF" : "#94A3B8"} /></View><Text style={[styles.navTextDark, activeTab === 'Plan' && { color: theme.primary, fontWeight: '900' }, {marginTop: 5}]}>Plan</Text></TouchableOpacity><TouchableOpacity style={styles.navItem} onPress={() => switchTab('Mercado')}><Ionicons name={activeTab === 'Mercado' ? "library" : "library-outline"} size={26} color={activeTab === 'Mercado' ? theme.primary : "#64748B"} /><Text style={[styles.navTextDark, activeTab === 'Mercado' && { color: theme.primary, fontWeight: '900' }]}>Apuntes</Text></TouchableOpacity></View>
       </SafeAreaView>
+
+      {/* 🔥 MODAL DEL TIMER POMODORO 🔥 */}
+      <Modal animationType="fade" transparent={true} visible={pomodoroVisible}>
+        <View style={styles.modalOverlayDark}>
+          <View style={[styles.modalContentDark, { alignItems: 'center' }]}>
+            <View style={[styles.modalHeaderDark, {width: '100%'}]}><Text style={styles.modalTitleDark}>Modo Concentración</Text><TouchableOpacity onPress={() => setPomodoroVisible(false)}><Ionicons name="close-circle" size={32} color="#475569" /></TouchableOpacity></View>
+            <View style={{backgroundColor: 'rgba(15, 23, 42, 0.8)', padding: 30, borderRadius: 100, marginBottom: 20, borderWidth: 4, borderColor: timerActive ? theme.primary : '#334155'}}>
+              <Text style={{fontSize: 50, fontWeight: '900', color: '#FFF'}}>{formatTime(timeLeft)}</Text>
+            </View>
+            <View style={{flexDirection: 'row', justifyContent: 'space-around', width: '100%', paddingHorizontal: 20}}>
+              <TouchableOpacity style={[styles.sheetSaveBtnDark, {backgroundColor: timerActive ? '#EF4444' : theme.secondary, flex: 1, marginRight: 10}]} onPress={() => { Haptics.selectionAsync(); setTimerActive(!timerActive); }}>
+                <Text style={styles.sheetSaveText}>{timerActive ? 'Pausar' : 'Iniciar'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.sheetSaveBtnDark, {backgroundColor: '#334155', flex: 1, marginLeft: 10}]} onPress={() => { Haptics.selectionAsync(); setTimeLeft(25 * 60); setTimerActive(false); }}>
+                <Text style={styles.sheetSaveText}>Reiniciar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* MODAL DE POP-UP DE NOTAS */}
       <Modal animationType="fade" transparent={true} visible={gradeModalVisible}>
