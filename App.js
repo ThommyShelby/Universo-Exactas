@@ -35,6 +35,10 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, getDocs } from 'firebase/firestore';
 
+// 🔥 NUEVAS IMPORTACIONES PARA EL VISOR SEGURO 🔥
+import { WebView } from 'react-native-webview';
+import * as ScreenCapture from 'expo-screen-capture';
+
 const { width, height } = Dimensions.get('window');
 
 Notifications.setNotificationHandler({
@@ -49,7 +53,7 @@ Notifications.setNotificationHandler({
 // 1. CONSTANTES Y CONFIGURACIÓN MANUAL
 // ==========================================
 const TABLA_DE_PRECIOS = { 'Álgebra Lineal y Análisis 2': 10 };
-const PRECIO_POR_DEFECTO = 50;
+const PRECIO_POR_DEFECTO = 5000;
 
 // 🔥 OPTATIVAS REALES DE LA UNLP (EXACTAS) 🔥
 const OPTATIVAS_FHOM = [
@@ -64,7 +68,6 @@ const OPTATIVAS_FHOM = [
   'Física de la Materia Blanda',
   'Probabilidad',
   'Ecuaciones Diferenciales',
-  'Geometría Diferencial',
   'Mecánica Estadística II',
   'Métodos de la Física Matemática',
   'Sem. Física del Sólido',
@@ -86,18 +89,16 @@ const OPTATIVAS_FHOM = [
 ];
 
 const OPTATIVAS_CIBEX = [
-  'Inmunología Avanzada',
+  'Inmunología',
+  'Anatomía e Histología',
+  'Bioinformática',
+  'Fisiopatología',
   'Virología',
   'Toxicología',
   'Bromatología',
   'Química Ambiental',
   'Farmacología',
   'Microbiología Clínica',
-  'Fisicoquímica Avanzada',
-  'Genética Molecular',
-  'Biología Celular',
-  'Química Analítica Ambiental',
-  'Neuroquímica',
 ];
 
 // 🔥 SISTEMA DE MUESTRAS (SNEAK PEEKS) 🔥
@@ -117,9 +118,9 @@ const getFileStyle = (filename) => {
   const nameLower = filename.toLowerCase();
   if (nameLower.match(/\.pdf$/)) return { icon: 'document-text', color: '#EF4444' };
   if (nameLower.match(/\.docx?$/)) return { icon: 'document', color: '#3B82F6' };
-  if (nameLower.match(/\.pptx?$/)) return { icon: 'easel', color: '#F59E0B' };
+  if (nameLower.match(/\.(pptx|wmv)$/)) return { icon: 'easel', color: '#F59E0B' };
   if (nameLower.match(/\.xlsx?$/)) return { icon: 'stats-chart', color: '#10B981' };
-  if (nameLower.match(/\.(jpg|jpeg|png|gif)$/)) return { icon: 'image', color: '#8B5CF6' };
+  if (nameLower.match(/\.(jpg|jpeg|png|gif|mp4|mp3)$/)) return { icon: 'image', color: '#8B5CF6' };
   if (nameLower.match(/\.(zip|rar)$/)) return { icon: 'archive', color: '#64748B' };
   return { icon: 'document-outline', color: '#94A3B8' };
 };
@@ -553,6 +554,14 @@ export default function App() {
   // MODAL PAGOS
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [selectedPackForPayment, setSelectedPackForPayment] = useState(null);
+  
+  // MODAL DISCLAIMER LEGAL
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
+
+  // 🔥 ESTADOS PARA EL VISOR SEGURO 🔥
+  const [pdfViewerVisible, setPdfViewerVisible] = useState(false);
+  const [currentPdfNode, setCurrentPdfNode] = useState(null);
 
   // HORARIOS
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
@@ -702,6 +711,9 @@ export default function App() {
           setHasSeenOnboarding(false);
           setCurrentSlideIndex(0);
         }
+        
+        // Verifica si el usuario ya aceptó el disclaimer
+        setDisclaimerAccepted(data.disclaimerAccepted || false);
 
         await AsyncStorage.setItem(`@offline_profile_${uid}`, JSON.stringify(data));
         if (data.career) {
@@ -780,6 +792,7 @@ export default function App() {
         setMisApuntes(d.misApuntes || []);
         cleanOldEvents(d.horarios || []);
         setHasSeenOnboarding(d.tutorialCompleted || false);
+        setDisclaimerAccepted(d.disclaimerAccepted || false);
       }
       if (localPlan) setPlan(JSON.parse(localPlan));
       if (localTienda) setTiendaData(JSON.parse(localTienda));
@@ -906,6 +919,7 @@ export default function App() {
         notas: {},
         optativasNames: {},
         tutorialCompleted: false,
+        disclaimerAccepted: false, // Inicializamos en falso
       });
       await loadOfflineOrOnlineData(userCredential.user.uid);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -931,6 +945,8 @@ export default function App() {
       setUserCareer('');
       setHasSeenOnboarding(false);
       setCurrentSlideIndex(0);
+      setDisclaimerAccepted(false);
+      setShowDisclaimer(false);
     } catch (error) {}
   };
 
@@ -1127,6 +1143,12 @@ export default function App() {
 
   const switchTab = (tab) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    // Mostramos el disclaimer si entra a Apuntes y no lo ha aceptado
+    if (tab === 'Mercado' && !disclaimerAccepted) {
+      setShowDisclaimer(true);
+    }
+
     setActiveTab(tab);
     setDrivePath([]);
   };
@@ -1348,18 +1370,34 @@ export default function App() {
     }
   };
 
-  const renderDriveNode = (node) => {
+  // 🔥 LÓGICA DE APERTURA DE ARCHIVOS (VISOR SEGURO UNIVERSAL) 🔥
+  const renderDriveNode = async (node) => {
     if (node.type === 'file') {
       if (node.url) {
-        Linking.openURL(node.url).catch((err) =>
-          showAlert('Error', 'No se pudo abrir el enlace del archivo.')
-        );
+        // Ahora abrimos TODOS los archivos con el visor seguro
+        setCurrentPdfNode(node);
+        setPdfViewerVisible(true);
+        try {
+          await ScreenCapture.preventScreenCaptureAsync();
+        } catch (e) {
+          console.log("No se pudo bloquear la captura", e);
+        }
       } else {
         showAlert('Aviso', 'Este archivo aún no tiene un enlace vinculado.');
       }
       return;
     }
     setDrivePath([...drivePath, node]);
+  };
+
+  const closePdfViewer = async () => {
+    setPdfViewerVisible(false);
+    setCurrentPdfNode(null);
+    try {
+      await ScreenCapture.allowScreenCaptureAsync();
+    } catch (e) {
+      console.log("No se pudo desbloquear la captura", e);
+    }
   };
   
   const handleBackDrive = () => {
@@ -1679,26 +1717,26 @@ export default function App() {
   }
 
   // ==========================================
-  // PANTALLA DE ONBOARDING
+  // PANTALLAS DE CARGA Y AUTENTICACIÓN
   // ==========================================
   if (!hasSeenOnboarding) {
     const slides = [
       {
         id: '1',
-        title: 'Tu carrera\nen tu bolsillo',
+        title: 'Tu carrera\na la vista',
         desc: 'Lleva el control de tus materias, cursadas y finales en tiempo real.',
         icon: 'rocket',
       },
       {
         id: '2',
-        title: 'Planifica sin\nestrés',
-        desc: 'Crea tu grilla semanal y agenda parciales. Te avisaremos 3 días y 24hs antes.',
+        title: 'Ordena tus\nclases y exámenes',
+        desc: 'Crea tu grilla semanal y agendá parciales. Nunca fue tan fácil organizarte.',
         icon: 'calendar',
       },
       {
         id: '3',
-        title: 'Desbloquea\nconocimiento',
-        desc: 'Accede a la Tienda y descarga material de estudio exclusivo.',
+        title: 'Y si necesitabas\napuntes para estudiar...',
+        desc: 'Accedé a la Tienda y observarás +15000 archivos de material de estudio.',
         icon: 'library',
       },
     ];
@@ -2651,7 +2689,7 @@ export default function App() {
                             style={{ marginRight: 10 }}
                           />
                           <Text style={{ color: '#FFF', fontWeight: 'bold' }}>
-                            Conectando con plataforma de pagos...
+                            Procesando pago, aguarde...
                           </Text>
                         </View>
                       )}
@@ -2901,6 +2939,39 @@ export default function App() {
           </TouchableOpacity>
         </View>
       </SafeAreaView>
+
+      {/* 🌟 VISOR UNIVERSAL DE DOCUMENTOS SEGURO (ANTI-CAPTURA) 🌟 */}
+      <Modal animationType="slide" transparent={false} visible={pdfViewerVisible} onRequestClose={closePdfViewer}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#0F172A' }}>
+          {/* Header del visor */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, borderBottomWidth: 1, borderBottomColor: '#334155' }}>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', paddingRight: 15 }}>
+              <Ionicons name="document-lock" size={24} color="#34D399" style={{ marginRight: 10 }} />
+              <Text style={{ flex: 1, color: '#FFF', fontSize: 16, fontWeight: 'bold' }} numberOfLines={1} ellipsizeMode="tail">
+                {currentPdfNode?.name || 'Documento Seguro'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={closePdfViewer} style={{ paddingHorizontal: 15, paddingVertical: 8, backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+              <Text style={{ color: '#EF4444', fontWeight: 'bold' }}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* El WebView que carga Drive de forma oculta */}
+          {currentPdfNode?.url && (
+            <WebView
+              source={{ uri: currentPdfNode.url }}
+              style={{ flex: 1, backgroundColor: '#0F172A' }}
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0F172A' }}>
+                  <ActivityIndicator size="large" color={theme.primary} />
+                  <Text style={{ color: '#94A3B8', marginTop: 10, fontWeight: 'bold' }}>Cargando visor seguro...</Text>
+                </View>
+              )}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
 
       {/* MODAL DEL TIMER POMODORO */}
       <Modal animationType="fade" transparent={true} visible={pomodoroVisible}>
@@ -3191,15 +3262,14 @@ export default function App() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* 🔥 MODAL MULTIPAGO 🔥 */}
+      {/* 🔥 MODAL PAGO ÚNICO (MERCADO PAGO) 🔥 */}
       <Modal animationType="slide" transparent={true} visible={paymentModalVisible}>
         <View style={styles.modalOverlayDark}>
           <View style={styles.modalSheetDark}>
             <View style={styles.sheetHandleDark} />
-            <Text style={styles.sheetTitleLight}>Método de Pago</Text>
-            <Text style={{ color: '#94A3B8', marginBottom: 25 }}>
-              Estás a punto de adquirir "{selectedPackForPayment?.title}". Elige cómo
-              quieres pagar:
+            <Text style={styles.sheetTitleLight}>Completar Compra</Text>
+            <Text style={{ color: '#94A3B8', marginBottom: 25, lineHeight: 22 }}>
+              Estás a punto de adquirir <Text style={{color: '#FFF', fontWeight: 'bold'}}>"{selectedPackForPayment?.title}"</Text>. El pago se procesará de forma segura a través de Mercado Pago (acepta tarjetas de crédito, débito y dinero en cuenta).
             </Text>
 
             <TouchableOpacity
@@ -3210,32 +3280,8 @@ export default function App() {
               onPress={() => procesarCompra(selectedPackForPayment)}
             >
               <Ionicons name="bag-check" size={24} color="#FFF" style={{ marginRight: 10 }} />
-              <Text style={[styles.loginButtonText, { flex: 1 }]}>Mercado Pago</Text>
+              <Text style={[styles.loginButtonText, { flex: 1 }]}>Pagar con Mercado Pago</Text>
               <Ionicons name="chevron-forward" size={20} color="#FFF" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.loginButton,
-                {
-                  backgroundColor: '#1E293B',
-                  borderWidth: 1,
-                  borderColor: '#334155',
-                  opacity: 0.6,
-                },
-              ]}
-              onPress={() =>
-                showAlert(
-                  'Próximamente 🚧',
-                  'La pasarela nativa para tarjetas está en desarrollo.\n\nPor favor, usa el botón de Mercado Pago (puedes pagar con tu tarjeta de crédito o débito dentro de su plataforma segura).'
-                )
-              }
-            >
-              <Ionicons name="card" size={24} color="#64748B" style={{ marginRight: 10 }} />
-              <Text style={[styles.loginButtonText, { flex: 1, color: '#94A3B8' }]}>
-                Añadir Tarjeta (Próximamente)
-              </Text>
-              <Ionicons name="lock-closed" size={18} color="#64748B" />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3243,6 +3289,64 @@ export default function App() {
               onPress={() => setPaymentModalVisible(false)}
             >
               <Text style={styles.sheetCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL DISCLAIMER LEGAL (PRIMER INGRESO A LA TIENDA) */}
+      <Modal animationType="fade" transparent={true} visible={showDisclaimer}>
+        <View style={styles.modalOverlayDark}>
+          <View style={styles.modalContentDark}>
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+              <Ionicons name="information-circle" size={60} color={theme.primary} />
+              <Text style={[styles.modalTitleDark, { marginTop: 10, textAlign: 'center' }]}>
+                Aviso Legal
+              </Text>
+            </View>
+            <ScrollView
+              style={{ maxHeight: height * 0.4 }}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text
+                style={{
+                  color: '#CBD5E1',
+                  fontSize: 15,
+                  lineHeight: 24,
+                  textAlign: 'justify',
+                }}
+              >
+                <Text style={{ fontWeight: 'bold', color: '#FFF' }}>
+                  Universo Exactas
+                </Text>{' '}
+                es una iniciativa independiente gestionada por estudiantes. Es importante aclarar que el monto abonado por los packs corresponde estrictamente al{' '}
+                <Text style={{ fontWeight: 'bold', color: '#FFF' }}>
+                  servicio de recopilación, organización, curaduría y mantenimiento
+                </Text>{' '}
+                de la infraestructura digital necesaria para brindar acceso inmediato al material.
+                {'\n\n'}
+                No se comercializa ni se reclama la propiedad intelectual de los archivos aquí listados, los cuales se encuentran disponibles de forma pública en diversos portales web y repositorios abiertos para su libre búsqueda individual.
+              </Text>
+            </ScrollView>
+            <TouchableOpacity
+              style={[
+                styles.sheetSaveBtnDark,
+                { backgroundColor: theme.secondary, marginTop: 25 },
+              ]}
+              onPress={async () => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                setShowDisclaimer(false);
+                setDisclaimerAccepted(true);
+                if (auth.currentUser) {
+                  await setDoc(
+                    doc(db, 'usuarios', auth.currentUser.uid),
+                    { disclaimerAccepted: true },
+                    { merge: true }
+                  ).catch(() => {});
+                }
+              }}
+            >
+              <Text style={styles.sheetSaveText}>Entendido</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -3650,7 +3754,6 @@ const styles = StyleSheet.create({
     height: width * 0.8,
     borderRadius: width * 0.4,
     opacity: 0.25,
-    // Note: filter might not work perfectly across all React Native versions, keep it as is.
     filter: 'blur(60px)',
   },
   shootingStar: {
