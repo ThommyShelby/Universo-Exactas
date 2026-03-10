@@ -37,7 +37,6 @@ import { doc, setDoc, getDoc, collection, getDocs } from 'firebase/firestore';
 
 // 🔥 NUEVAS IMPORTACIONES PARA EL VISOR SEGURO 🔥
 import { WebView } from 'react-native-webview';
-import * as ScreenCapture from 'expo-screen-capture';
 
 const { width, height } = Dimensions.get('window');
 
@@ -1374,14 +1373,8 @@ export default function App() {
   const renderDriveNode = async (node) => {
     if (node.type === 'file') {
       if (node.url) {
-        // Ahora abrimos TODOS los archivos con el visor seguro
         setCurrentPdfNode(node);
         setPdfViewerVisible(true);
-        try {
-          await ScreenCapture.preventScreenCaptureAsync();
-        } catch (e) {
-          console.log("No se pudo bloquear la captura", e);
-        }
       } else {
         showAlert('Aviso', 'Este archivo aún no tiene un enlace vinculado.');
       }
@@ -1390,14 +1383,9 @@ export default function App() {
     setDrivePath([...drivePath, node]);
   };
 
-  const closePdfViewer = async () => {
+  const closePdfViewer = () => {
     setPdfViewerVisible(false);
     setCurrentPdfNode(null);
-    try {
-      await ScreenCapture.allowScreenCaptureAsync();
-    } catch (e) {
-      console.log("No se pudo desbloquear la captura", e);
-    }
   };
   
   const handleBackDrive = () => {
