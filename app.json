@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mi-app-estudio",
-    "slug": "mi-app-estudio",
+    "name": "Universo Exactas",
+    "slug": "universo-exactas",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -9,25 +9,25 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#050519"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#050519",
+        "foregroundImage": "./assets/icon.png"
       },
-      "package": "com.juangelp.miappestudio"
+      "package": "com.universo.exactas"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-notifications",
+      "expo-screen-capture"
     ],
     "extra": {
       "eas": {
