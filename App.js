@@ -34,8 +34,6 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, getDocs } from 'firebase/firestore';
-
-// 🔥 NUEVAS IMPORTACIONES PARA EL VISOR SEGURO 🔥
 import { WebView } from 'react-native-webview';
 
 const { width, height } = Dimensions.get('window');
@@ -47,7 +45,6 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
-
 // ==========================================
 // 1. CONSTANTES Y CONFIGURACIÓN MANUAL
 // ==========================================
