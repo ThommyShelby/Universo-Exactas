@@ -5,6 +5,7 @@ import {
   View,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   SafeAreaView,
   TextInput,
   Modal,
@@ -35,7 +36,8 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { WebView } from 'react-native-webview';
-
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 const { width, height } = Dimensions.get('window');
 
 Notifications.setNotificationHandler({
@@ -48,8 +50,10 @@ Notifications.setNotificationHandler({
 // ==========================================
 // 1. CONSTANTES Y CONFIGURACIÓN MANUAL
 // ==========================================
-const TABLA_DE_PRECIOS = { 'Álgebra Lineal y Análisis 2': 10 };
-const PRECIO_POR_DEFECTO = 5000;
+const TABLA_DE_PRECIOS = { 'Optativas Fisica': 3000, 'Optativas Matematica': 3000 , 
+  '+600 Libros Utiles': 10000, 'Utiles': 2500   
+  };
+const PRECIO_POR_DEFECTO = 4500;
 
 // 🔥 OPTATIVAS REALES DE LA UNLP (EXACTAS) 🔥
 const OPTATIVAS_FHOM = [
@@ -129,6 +133,20 @@ const getGreeting = () => {
 };
 
 const SPACE_CAREERS = ['Lic. en Física', 'Lic. en Matemática', 'Lic. en Física Médica'];
+
+const PALETTE_SPACE = [
+  '#6366F1', '#8B5CF6', '#60A5FA', '#A78BFA',
+  '#38BDF8', '#C084FC', '#818CF8', '#7C3AED',
+];
+const PALETTE_CHEM = [
+  '#34D399', '#0D9488', '#22D3EE', '#FBBF24',
+  '#10B981', '#84CC16', '#2DD4BF', '#A3E635',
+];
+const getSubjectColor = (subjectId, isSpace) => {
+  const palette = isSpace ? PALETTE_SPACE : PALETTE_CHEM;
+  const hash = subjectId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  return palette[hash % palette.length];
+};
 const CARRERAS = [
   'Lic. en Física',
   'Lic. en Matemática',
@@ -300,51 +318,9 @@ const GalaxyBackground = () => {
     []
   );
 
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.15,
-          duration: 5000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 5000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
-
   return (
     <View style={StyleSheet.absoluteFillObject}>
       <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#050519' }]} />
-      <Animated.View
-        style={[
-          styles.nebula,
-          {
-            top: -50,
-            right: -50,
-            backgroundColor: '#4F46E5',
-            transform: [{ scale: pulseAnim }],
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.nebula,
-          {
-            bottom: height / 4,
-            left: -100,
-            backgroundColor: '#8B5CF6',
-            width: 350,
-            height: 350,
-            transform: [{ scale: pulseAnim }],
-          },
-        ]}
-      />
       {stars.map((star) => (
         <TwinklingStar
           key={star.id}
@@ -415,51 +391,9 @@ const ChemistryBackground = () => {
     []
   );
 
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 4000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 4000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
-
   return (
     <View style={StyleSheet.absoluteFillObject}>
       <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#022C22' }]} />
-      <Animated.View
-        style={[
-          styles.nebula,
-          {
-            top: -50,
-            right: -50,
-            backgroundColor: '#059669',
-            transform: [{ scale: pulseAnim }],
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.nebula,
-          {
-            bottom: height / 4,
-            left: -100,
-            backgroundColor: '#0D9488',
-            width: 350,
-            height: 350,
-            transform: [{ scale: pulseAnim }],
-          },
-        ]}
-      />
       {bubbles.map((b) => (
         <FloatingBubble
           key={b.id}
@@ -505,6 +439,8 @@ export default function App() {
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
   const scrollX = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef(null);
+  const grillaRef = useRef(null);
+  const planFadeAnim = useRef(new Animated.Value(0)).current;
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
   const [authMode, setAuthMode] = useState('login');
@@ -515,7 +451,7 @@ export default function App() {
 
   const [logoTaps, setLogoTaps] = useState(0);
   const [showEasterEgg, setShowEasterEgg] = useState(false);
-  const [titleTaps, setTitleTaps] = useState(0);
+  const easterEggTaps = useRef([]);
 
   const [pomodoroVisible, setPomodoroVisible] = useState(false);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
@@ -569,7 +505,7 @@ export default function App() {
   const [newDay, setNewDay] = useState('Lunes');
   const [newStartTime, setNewStartTime] = useState('8');
   const [newEndTime, setNewEndTime] = useState('10');
-
+  const [selectedDayTab, setSelectedDayTab] = useState('Lunes');
   const [careerModalVisible, setCareerModalVisible] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -590,6 +526,20 @@ export default function App() {
   const [isStoreLoading, setIsStoreLoading] = useState(true);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
+
+  // ----------------------------------------------------
+  // FADE ANIMADO DEL PLAN AL CARGAR
+  // ----------------------------------------------------
+  useEffect(() => {
+    if (plan.length > 0) {
+      planFadeAnim.setValue(0);
+      Animated.timing(planFadeAnim, {
+        toValue: 1,
+        duration: 700,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [plan.length]);
   // ----------------------------------------------------
   // POMODORO TIMER EFECTO
   // ----------------------------------------------------
@@ -618,19 +568,48 @@ export default function App() {
     return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // ----------------------------------------------------
-  // EASTER EGGS
-  // ----------------------------------------------------
-  const handleTitleTap = async () => {
-    setTitleTaps((prev) => {
-      const next = prev + 1;
-      if (next >= 20) {
+  // Easter egg: secuencia 3-2-1
+  // Tocás el título 3 veces rápido → pausás más de 1 segundo
+  // → tocás 2 veces rápido → pausás → tocás 1 vez sola
+  // Si lo hacés en menos de 12 segundos, activa el Modo Dios.
+  const handleTitleTap = () => {
+    const now = Date.now();
+    const taps = easterEggTaps.current;
+    taps.push(now);
+ 
+    // Descartá toques de más de 12 segundos atrás
+    easterEggTaps.current = taps.filter((t) => now - t < 12000);
+ 
+    // Necesitamos al menos 6 toques para el patrón 3-2-1
+    if (easterEggTaps.current.length < 6) return;
+ 
+    // Agrupar toques: si el gap entre dos toques consecutivos > 900ms, es un nuevo grupo
+    const recent = easterEggTaps.current;
+    const groups = [];
+    let currentGroup = [recent[0]];
+    for (let i = 1; i < recent.length; i++) {
+      if (recent[i] - recent[i - 1] > 900) {
+        groups.push(currentGroup);
+        currentGroup = [recent[i]];
+      } else {
+        currentGroup.push(recent[i]);
+      }
+    }
+    groups.push(currentGroup);
+ 
+    // Verificar que los últimos 3 grupos tengan exactamente 3, 2 y 1 toque
+    if (groups.length >= 3) {
+      const last3 = groups.slice(-3);
+      if (
+        last3[0].length === 3 &&
+        last3[1].length === 2 &&
+        last3[2].length === 1
+      ) {
+        easterEggTaps.current = [];
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         activarModoDios();
-        return 0;
       }
-      return next;
-    });
+    }
   };
 
   const activarModoDios = async () => {
@@ -930,6 +909,8 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      easterEggTaps.current = [];
+      setCustomAlert({ visible: false, title: '', message: '', buttons: null });
       setIsAuthenticated(false);
       setPlan([]);
       setHorarios([]);
@@ -1128,6 +1109,28 @@ export default function App() {
     [plan]
   );
   
+  const proximoExamen = useMemo(() => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const eventosConFecha = horarios
+      .filter((h) => h.isCustom && h.date)
+      .map((h) => {
+        const partes = h.date.split('-');
+        const fecha = new Date(
+          parseInt(partes[0]),
+          parseInt(partes[1]) - 1,
+          parseInt(partes[2])
+        );
+        fecha.setHours(0, 0, 0, 0);
+        const diffMs = fecha.getTime() - hoy.getTime();
+        const dias = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        return { ...h, diasRestantes: dias };
+      })
+      .filter((h) => h.diasRestantes >= 0)
+      .sort((a, b) => a.diasRestantes - b.diasRestantes);
+    return eventosConFecha.length > 0 ? eventosConFecha[0] : null;
+  }, [horarios]);
+
   const planByYear = useMemo(() => {
     const grouped = {};
     plan.forEach((subj) => {
@@ -1170,6 +1173,7 @@ export default function App() {
       if (!newSubject) return showAlert('Falta Materia', 'Selecciona una materia.');
       blockTitle = newSubject.customName || newSubject.title;
       blockCode = newSubject.id;
+      blockColor = getSubjectColor(newSubject.id, isSpaceTheme);
       
       if (
         horarios
@@ -1378,6 +1382,30 @@ export default function App() {
       return;
     }
     setDrivePath([...drivePath, node]);
+  };
+
+  // ----------------------------------------------------
+  // DESCARGA DE HORARIO COMO IMAGEN
+  // ----------------------------------------------------
+  const downloadSchedule = async () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const uri = await captureRef(grillaRef, {
+        format: 'png',
+        quality: 1,
+      });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          dialogTitle: 'Compartir mi horario',
+        });
+      } else {
+        showAlert('Error', 'La función de compartir no está disponible en este dispositivo.');
+      }
+    } catch (e) {
+      showAlert('Error', 'No se pudo capturar el horario. Intentá de nuevo.');
+    }
   };
 
   const closePdfViewer = () => {
@@ -1708,7 +1736,7 @@ export default function App() {
     const slides = [
       {
         id: '1',
-        title: 'Tu carrera\na la vista',
+        title: 'Tu carrera\nen tu bolsillo',
         desc: 'Lleva el control de tus materias, cursadas y finales en tiempo real.',
         icon: 'rocket',
       },
@@ -1720,7 +1748,7 @@ export default function App() {
       },
       {
         id: '3',
-        title: 'Y si necesitabas\napuntes para estudiar...',
+        title: 'Y si no tenias\napuntes para estudiar...',
         desc: 'Accedé a la Tienda y observarás +15000 archivos de material de estudio.',
         icon: 'library',
       },
@@ -1889,7 +1917,11 @@ export default function App() {
               refreshControl={
                 <RefreshControl
                   refreshing={refreshing}
-                  onRefresh={() => loadOfflineOrOnlineData(auth.currentUser?.uid)}
+                  onRefresh={async () => {
+  setRefreshing(true);
+  await loadOfflineOrOnlineData(auth.currentUser?.uid);
+  setRefreshing(false);
+}}
                   tintColor={theme.primary}
                 />
               }
@@ -1993,7 +2025,7 @@ export default function App() {
                 </View>
               </View>
 
-              <View style={styles.treeContainer}>
+              <Animated.View style={[styles.treeContainer, { opacity: planFadeAnim }]}>
                 {Object.keys(planByYear)
                   .sort()
                   .map((yearLabel) => (
@@ -2132,7 +2164,7 @@ export default function App() {
                     </View>
                   ))}
                 <View style={{ height: 100 }} />
-              </View>
+              </Animated.View>
             </ScrollView>
           )}
 
@@ -2162,18 +2194,29 @@ export default function App() {
                     Mis Horarios
                   </Text>
                 </View>
-                <TouchableOpacity
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setNoticesModalVisible(true);
-                  }}
-                  style={[
-                    styles.avatarPlaceholderDark,
-                    { borderColor: theme.bgLight },
-                  ]}
-                >
-                  <Ionicons name="notifications" size={22} color={theme.primary} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={downloadSchedule}
+                    style={[
+                      styles.avatarPlaceholderDark,
+                      { borderColor: theme.bgLight },
+                    ]}
+                  >
+                    <Ionicons name="download-outline" size={22} color={theme.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setNoticesModalVisible(true);
+                    }}
+                    style={[
+                      styles.avatarPlaceholderDark,
+                      { borderColor: theme.bgLight },
+                    ]}
+                  >
+                    <Ionicons name="notifications" size={22} color={theme.primary} />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View
@@ -2239,7 +2282,11 @@ export default function App() {
                   refreshControl={
                     <RefreshControl
                       refreshing={refreshing}
-                      onRefresh={() => loadOfflineOrOnlineData(auth.currentUser?.uid)}
+                      onRefresh={async () => {
+  setRefreshing(true);
+  await loadOfflineOrOnlineData(auth.currentUser?.uid);
+  setRefreshing(false);
+}}
                       tintColor={theme.primary}
                     />
                   }
@@ -2249,7 +2296,7 @@ export default function App() {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={{ paddingHorizontal: width * 0.03 }}
                   >
-                    <View style={styles.gridContainer}>
+                    <View ref={grillaRef} style={styles.gridContainer} collapsable={false}>
                       <View style={styles.timeColumn}>
                         <View style={styles.emptyCorner} />
                         {HORAS.map((h) => (
@@ -2266,9 +2313,11 @@ export default function App() {
                             </Text>
                           </View>
                           <View style={styles.dayColBody}>
-                            {HORAS.map((h) => (
-                              <View key={h} style={styles.gridLine} />
-                            ))}
+                            <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+                              {HORAS.map((h) => (
+                                <View key={h} style={styles.gridLine} />
+                              ))}
+                            </View>
                             {horarios
                               .filter((h) => h.day === dia && !h.isCustom)
                               .map((evento) => {
@@ -2277,6 +2326,7 @@ export default function App() {
                                 return (
                                   <TouchableOpacity
                                     key={evento.id}
+                                    activeOpacity={0.75}
                                     style={[
                                       styles.eventBlock,
                                       {
@@ -2286,27 +2336,11 @@ export default function App() {
                                         zIndex: 10,
                                       },
                                     ]}
-                                    delayLongPress={150}
                                     onPress={() => {
                                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                                       showAlert(
-                                        'Opciones de bloque',
-                                        `¿Qué deseas hacer con "${evento.subject}"?`,
-                                        [
-                                          { text: 'Cancelar', style: 'cancel' },
-                                          {
-                                            text: 'Eliminar',
-                                            style: 'destructive',
-                                            onPress: () => removeScheduleItem(evento.id),
-                                          },
-                                        ]
-                                      );
-                                    }}
-                                    onLongPress={() => {
-                                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-                                      showAlert(
-                                        'Opciones de bloque',
-                                        `¿Qué deseas hacer con "${evento.subject}"?`,
+                                        'Eliminar bloque',
+                                        `¿Eliminás "${evento.subject}"?`,
                                         [
                                           { text: 'Cancelar', style: 'cancel' },
                                           {
@@ -2343,11 +2377,116 @@ export default function App() {
                   refreshControl={
                     <RefreshControl
                       refreshing={refreshing}
-                      onRefresh={() => loadOfflineOrOnlineData(auth.currentUser?.uid)}
+                      onRefresh={async () => {
+                        setRefreshing(true);
+                        await loadOfflineOrOnlineData(auth.currentUser?.uid);
+                        setRefreshing(false);
+                      }}
                       tintColor={theme.primary}
                     />
                   }
                 >
+                  {/* BANNER PRÓXIMO EXAMEN */}
+                  {proximoExamen && (
+                    <View
+                      style={{
+                        borderRadius: 20,
+                        padding: 16,
+                        marginBottom: 15,
+                        borderWidth: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor:
+                          proximoExamen.diasRestantes === 0
+                            ? 'rgba(239, 68, 68, 0.15)'
+                            : proximoExamen.diasRestantes <= 3
+                            ? 'rgba(239, 68, 68, 0.1)'
+                            : proximoExamen.diasRestantes <= 7
+                            ? 'rgba(234, 179, 8, 0.1)'
+                            : 'rgba(129, 140, 248, 0.1)',
+                        borderColor:
+                          proximoExamen.diasRestantes === 0
+                            ? 'rgba(239, 68, 68, 0.5)'
+                            : proximoExamen.diasRestantes <= 3
+                            ? 'rgba(239, 68, 68, 0.3)'
+                            : proximoExamen.diasRestantes <= 7
+                            ? 'rgba(234, 179, 8, 0.3)'
+                            : 'rgba(129, 140, 248, 0.3)',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 48,
+                          height: 48,
+                          borderRadius: 24,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          marginRight: 14,
+                          backgroundColor:
+                            proximoExamen.diasRestantes === 0
+                              ? 'rgba(239, 68, 68, 0.2)'
+                              : proximoExamen.diasRestantes <= 3
+                              ? 'rgba(239, 68, 68, 0.15)'
+                              : proximoExamen.diasRestantes <= 7
+                              ? 'rgba(234, 179, 8, 0.15)'
+                              : 'rgba(129, 140, 248, 0.15)',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 18,
+                            fontWeight: '900',
+                            color:
+                              proximoExamen.diasRestantes <= 3
+                                ? '#EF4444'
+                                : proximoExamen.diasRestantes <= 7
+                                ? '#EAB308'
+                                : theme.primary,
+                          }}
+                        >
+                          {proximoExamen.diasRestantes === 0
+                            ? '¡Hoy!'
+                            : proximoExamen.diasRestantes === 1
+                            ? '¡Mañ!'
+                            : `${proximoExamen.diasRestantes}d`}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={{
+                            color:
+                              proximoExamen.diasRestantes <= 3
+                                ? '#EF4444'
+                                : proximoExamen.diasRestantes <= 7
+                                ? '#EAB308'
+                                : theme.primary,
+                            fontSize: 11,
+                            fontWeight: '800',
+                            textTransform: 'uppercase',
+                            letterSpacing: 1,
+                            marginBottom: 2,
+                          }}
+                        >
+                          Próximo examen
+                        </Text>
+                        <Text
+                          style={{
+                            color: '#FFF',
+                            fontSize: 15,
+                            fontWeight: 'bold',
+                          }}
+                          numberOfLines={1}
+                        >
+                          {proximoExamen.subject}
+                        </Text>
+                        <Text style={{ color: '#94A3B8', fontSize: 12, marginTop: 2 }}>
+                          {proximoExamen.date} · {proximoExamen.start}:00 hs
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                 
+
                   {horarios.filter((h) => h.isCustom).length > 0 ? (
                     horarios
                       .filter((h) => h.isCustom)
@@ -2357,46 +2496,66 @@ export default function App() {
                           (b.date ? new Date(b.date).getTime() : 0)
                       )
                       .map((evento) => (
-                        <View key={evento.id} style={styles.storeCard}>
-                          <View style={styles.storeCardHeader}>
-                            <View
-                              style={[
-                                styles.storeIconBox,
-                                { backgroundColor: '#EF444420' },
-                              ]}
-                            >
-                              <Ionicons name="warning" size={28} color="#EF4444" />
-                            </View>
-                            <View style={styles.storeCardTextContainer}>
-                              <Text style={styles.storeCardTitle}>{evento.subject}</Text>
-                              <Text style={styles.storeCardSubtitle}>
-                                {evento.day} {evento.date}
-                              </Text>
-                            </View>
-                            <TouchableOpacity
-                              onPress={() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                                showAlert(
-                                  'Eliminar evento',
-                                  `¿Seguro que quieres eliminar "${evento.subject}"?`,
-                                  [
-                                    { text: 'Cancelar', style: 'cancel' },
-                                    {
-                                      text: 'Eliminar',
-                                      style: 'destructive',
-                                      onPress: () => removeScheduleItem(evento.id),
-                                    },
-                                  ]
-                                );
-                              }}
-                            >
-                              <Ionicons name="trash" size={24} color="#EF4444" />
-                            </TouchableOpacity>
-                          </View>
-                          <Text style={styles.storeCardDesc}>
-                            Horario: {evento.start}:00 a {evento.end}:00 hs.
-                          </Text>
-                        </View>
+<TouchableOpacity
+  key={evento.id}
+  activeOpacity={0.8}
+  onLongPress={() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    showAlert(
+      'Eliminar evento',
+      `¿Seguro que quieres eliminar "${evento.subject}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => removeScheduleItem(evento.id),
+        },
+      ]
+    );
+  }}
+>
+  <View style={styles.storeCard}>
+    <View style={styles.storeCardHeader}>
+      <View
+        style={[
+          styles.storeIconBox,
+          { backgroundColor: '#EF444420' },
+        ]}
+      >
+        <Ionicons name="warning" size={28} color="#EF4444" />
+      </View>
+      <View style={styles.storeCardTextContainer}>
+        <Text style={styles.storeCardTitle}>{evento.subject}</Text>
+        <Text style={styles.storeCardSubtitle}>
+          {evento.day} {evento.date}
+        </Text>
+      </View>
+      <TouchableOpacity
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          showAlert(
+            'Eliminar evento',
+            `¿Seguro que quieres eliminar "${evento.subject}"?`,
+            [
+              { text: 'Cancelar', style: 'cancel' },
+              {
+                text: 'Eliminar',
+                style: 'destructive',
+                onPress: () => removeScheduleItem(evento.id),
+              },
+            ]
+          );
+        }}
+      >
+        <Ionicons name="trash" size={24} color="#EF4444" />
+      </TouchableOpacity>
+    </View>
+    <Text style={styles.storeCardDesc}>
+      Horario: {evento.start}:00 a {evento.end}:00 hs.
+    </Text>
+  </View>
+ </TouchableOpacity>
                       ))
                   ) : (
                     <View style={styles.emptyDriveBox}>
@@ -2624,7 +2783,11 @@ export default function App() {
                   refreshControl={
                     <RefreshControl
                       refreshing={refreshing}
-                      onRefresh={() => loadOfflineOrOnlineData(auth.currentUser?.uid)}
+                      onRefresh={async () => {
+  setRefreshing(true);
+  await loadOfflineOrOnlineData(auth.currentUser?.uid);
+  setRefreshing(false);
+}}
                       tintColor={theme.primary}
                     />
                   }
@@ -3286,7 +3449,7 @@ export default function App() {
             <View style={{ alignItems: 'center', marginBottom: 20 }}>
               <Ionicons name="information-circle" size={60} color={theme.primary} />
               <Text style={[styles.modalTitleDark, { marginTop: 10, textAlign: 'center' }]}>
-                Aviso Legal
+                Disclaimer legal
               </Text>
             </View>
             <ScrollView
@@ -3301,16 +3464,16 @@ export default function App() {
                   textAlign: 'justify',
                 }}
               >
-                <Text style={{ fontWeight: 'bold', color: '#FFF' }}>
-                  Universo Exactas
+                <Text style={{ fontWeight: 'bold', color: '#ab3535' }}>
+                  Atencion:
                 </Text>{' '}
-                es una iniciativa independiente gestionada por estudiantes. Es importante aclarar que el monto abonado por los packs corresponde estrictamente al{' '}
+                Es importante aclarar que el monto por los packs corresponde estrictamente al{' '}
                 <Text style={{ fontWeight: 'bold', color: '#FFF' }}>
-                  servicio de recopilación, organización, curaduría y mantenimiento
+                  servicio de recopilación, organización y mantenimiento
                 </Text>{' '}
-                de la infraestructura digital necesaria para brindar acceso inmediato al material.
+                de esta aplicación la cual da acceso inmediato al material.
                 {'\n\n'}
-                No se comercializa ni se reclama la propiedad intelectual de los archivos aquí listados, los cuales se encuentran disponibles de forma pública en diversos portales web y repositorios abiertos para su libre búsqueda individual.
+                No se comercializa ni se reclama la propiedad intelectual de los archivos aquí listados, los cuales estan disponibles en portales web y repositorios abiertos.
               </Text>
             </ScrollView>
             <TouchableOpacity
@@ -3715,6 +3878,11 @@ export default function App() {
           </View>
         </View>
       </Modal>
+
+      {/* CUSTOM ALERT - app principal */}
+      <Modal visible={customAlert.visible} transparent={true} animationType="fade">
+        <View style={styles.modalOverlayDark}>{renderAlertContent()}</View>
+      </Modal>
     </View>
   );
 }
@@ -3732,14 +3900,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: width * 0.08,
     paddingVertical: Platform.OS === 'android' ? 60 : 40,
-  },
-  nebula: {
-    position: 'absolute',
-    width: width * 0.8,
-    height: width * 0.8,
-    borderRadius: width * 0.4,
-    opacity: 0.25,
-    filter: 'blur(60px)',
   },
   shootingStar: {
     position: 'absolute',
@@ -4137,7 +4297,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
-    overflow: 'hidden',
   },
   gridLine: {
     height: 60,

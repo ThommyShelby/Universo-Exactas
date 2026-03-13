@@ -19,14 +19,25 @@
         "backgroundColor": "#050519",
         "foregroundImage": "./assets/icon.png"
       },
-      "package": "com.universo.exactas"
+      "package": "com.universo.exactas",
+      "permissions": [
+        "NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-web-browser",
-      "expo-notifications"
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#818CF8",
+          "sounds": []
+        }
+      ]
     ],
     "extra": {
       "eas": {
